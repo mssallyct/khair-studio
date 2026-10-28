@@ -159,7 +159,7 @@ table { width: 100%; border-collapse: collapse; }
 th, td { padding: 13px 12px; border-bottom: 1px solid #e5e1d9; text-align: left; white-space: nowrap; }
 th { color: #6d756f; font-size: .72rem; letter-spacing: .04em; }
 td { font-size: .86rem; }
-.actions { display: flex; gap: 7px; }
+.actions { display: flex; gap: 7px; flex-wrap: wrap; align-items: center; }
 
 .filter-bar { margin-bottom: 18px; display: flex; gap: 10px; flex-wrap: wrap; }
 .filter-bar input, .filter-bar select { min-width: 160px; border: 1px solid #d9d5cc; border-radius: 12px; padding: 10px 12px; background: #fff; }

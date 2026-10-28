@@ -58,13 +58,19 @@ export class KhairApi {
     return { appointments, sales, stamps, catalog, stylists, balance: Number(balanceRows[0]?.balance || 0) };
   }
 
-  async createAppointment({ memberId, stylistId, serviceId, date, time, note }) {
-    if (this.demoMode) return this.demo.createAppointment({ memberId, stylistId, serviceId, date, time, note });
+  async createAppointment({ memberId, stylistId, serviceId, date, time, note, status = "pending" }) {
+    if (this.demoMode) return this.demo.createAppointment({ memberId, stylistId, serviceId, date, time, note, status });
     const catalog = await this.getCatalog();
     const service = catalog.find(item => item.id === serviceId);
     const startAt = toHongKongIso(date, time);
     const endAt = new Date(new Date(startAt).getTime() + Number(service.duration_minutes) * 60000).toISOString();
-    const rows = await this.rest(`/appointments`, { method: "POST", body: { member_id: memberId, stylist_id: stylistId, service_id: serviceId, start_at: startAt, end_at: endAt, note: note || "", status: "pending" }, prefer: "return=representation" });
+    const rows = await this.rest(`/appointments`, { method: "POST", body: { member_id: memberId, stylist_id: stylistId, service_id: serviceId, start_at: startAt, end_at: endAt, note: note || "", status: status === "confirmed" ? "confirmed" : "pending" }, prefer: "return=representation" });
+    return rows[0];
+  }
+
+  async createCatalogItem({ name, kind, price, durationMinutes }) {
+    if (this.demoMode) return this.demo.createCatalogItem({ name, kind, price, durationMinutes });
+    const rows = await this.rest(`/catalog`, { method: "POST", body: { name: String(name || "").trim(), kind: kind === "product" ? "product" : "service", price: Number(price), duration_minutes: kind === "product" ? 0 : Number(durationMinutes), active: true }, prefer: "return=representation" });
     return rows[0];
   }
 

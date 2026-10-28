@@ -1,4 +1,4 @@
-import { calculateSale, isBirthdayMonth, normalizeHongKongPhone, toHongKongIso } from "./rules.js";
+import { calculateSale, isBirthdayMonth, isValidBusinessSlot, normalizeHongKongPhone, toHongKongIso } from "./rules.js";
 
 const STORAGE_KEY = "khair-demo-v1";
 
@@ -63,15 +63,35 @@ export class DemoStore {
     return { appointments, sales, stamps, balance: this.stampBalance(memberId), catalog: await this.getCatalog(), stylists: await this.getStylists() };
   }
 
-  async createAppointment({ memberId, stylistId, serviceId, date, time, note }) {
+  async createAppointment({ memberId, stylistId, serviceId, date, time, note, status = "pending" }) {
+    const member = this.data.profiles.find(item => item.id === memberId && item.role === "member" && item.active);
     const service = this.data.catalog.find(item => item.id === serviceId);
+    const stylist = this.data.stylists.find(item => item.id === stylistId && item.active);
+    if (!member) throw new Error("請選擇有效會員。");
+    if (!service || service.kind !== "service") throw new Error("請選擇有效服務。");
+    if (!stylist) throw new Error("請選擇有效髮型師。");
+    if (!date || !time) throw new Error("請選擇預約日期及時間。");
+    if (!isValidBusinessSlot(time, service.duration_minutes)) throw new Error("預約必須在11:00至21:00營業時間內。");
     const startAt = toHongKongIso(date, time);
     const start = new Date(startAt).getTime();
     const end = start + service.duration_minutes * 60000;
     const conflict = this.data.appointments.some(item => item.stylist_id === stylistId && !["cancelled", "no_show"].includes(item.status) && start < new Date(item.end_at).getTime() && end > new Date(item.start_at).getTime());
     if (conflict) throw new Error("此髮型師在所選時段已有預約，請選擇其他時間。");
-    const item = { id: this.id("apt"), member_id: memberId, stylist_id: stylistId, service_id: serviceId, start_at: startAt, end_at: new Date(end).toISOString(), status: "pending", note: note || "", created_at: new Date().toISOString() };
+    const item = { id: this.id("apt"), member_id: memberId, stylist_id: stylistId, service_id: serviceId, start_at: startAt, end_at: new Date(end).toISOString(), status: status === "confirmed" ? "confirmed" : "pending", note: note || "", created_at: new Date().toISOString() };
     this.data.appointments.push(item); this.save(); return item;
+  }
+
+  async createCatalogItem({ name, kind, price, durationMinutes }) {
+    const itemName = String(name || "").trim();
+    const itemKind = kind === "product" ? "product" : "service";
+    const itemPrice = Number(price);
+    const duration = itemKind === "product" ? 0 : Number(durationMinutes);
+    if (!itemName) throw new Error("請輸入項目名稱。");
+    if (!Number.isFinite(itemPrice) || itemPrice < 0) throw new Error("請輸入有效價格。");
+    if (itemKind === "service" && (!Number.isInteger(duration) || duration < 30 || duration % 30 !== 0)) throw new Error("服務時間必須以30分鐘為單位。");
+    if (this.data.catalog.some(item => item.name.trim().toLowerCase() === itemName.toLowerCase())) throw new Error("此項目名稱已存在。");
+    const row = { id: this.id("catalog"), name: itemName, kind: itemKind, price: itemPrice, duration_minutes: duration, active: true, sort_order: Math.max(0, ...this.data.catalog.map(item => Number(item.sort_order) || 0)) + 10, created_at: new Date().toISOString() };
+    this.data.catalog.push(row); this.save(); return row;
   }
 
   async cancelAppointment(id, memberId) {
@@ -149,8 +169,8 @@ function seedData() {
   return {
     profiles: [
       { id: "admin-1", email: "mssallyct@gmail.com", name: "K.Hair 管理員", phone: "", birthday: null, referral_code: "KHAIRVIP", role: "admin", active: true, created_at: now.toISOString() },
-      { id: "member-1", email: "member@khair.demo", name: "陳美玲", phone: "9123 4567", birthday: `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}-15`, referral_code: "MEILING8", role: "member", active: true, created_at: now.toISOString() },
-      { id: "member-2", email: "joey@khair.demo", name: "李祖兒", phone: "9234 5678", birthday: "1992-03-11", referral_code: "JOEY88", role: "member", active: true, created_at: now.toISOString() }
+      { id: "member-1", email: null, name: "示範會員 A", phone: "", birthday: null, referral_code: "DEMOA", role: "member", active: true, created_at: now.toISOString() },
+      { id: "member-2", email: null, name: "示範會員 B", phone: "", birthday: null, referral_code: "DEMOB", role: "member", active: true, created_at: now.toISOString() }
     ],
     stylists: [
       { id: "sty-a", name: "Hair Stylist A", active: true },
@@ -167,7 +187,7 @@ function seedData() {
       { id: "prd-shampoo", name: "專業洗髮水", kind: "product", price: 260, duration_minutes: 0, active: true }
     ],
     appointments: [
-      { id: "apt-1", member_id: "member-1", stylist_id: "sty-a", service_id: "svc-cut", start_at: isoAt(tomorrow, 13), end_at: isoAt(tomorrow, 14), status: "pending", note: "想修薄少少", created_at: now.toISOString() },
+      { id: "apt-1", member_id: "member-1", stylist_id: "sty-a", service_id: "svc-cut", start_at: isoAt(tomorrow, 13), end_at: isoAt(tomorrow, 14), status: "pending", note: "", created_at: now.toISOString() },
       { id: "apt-2", member_id: "member-2", stylist_id: "sty-b", service_id: "svc-color", start_at: isoAt(dayAfter, 15), end_at: isoAt(dayAfter, 17), status: "confirmed", note: "", created_at: now.toISOString() }
     ],
     sales: [], saleItems: [], referrals: [],

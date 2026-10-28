@@ -205,7 +205,7 @@ function renderAdminDashboard() {
 }
 
 function renderAdminAppointments() {
-  return `<section class="card"><div class="card-head"><h2>預約清單</h2><div class="segmented"><button class="active">全部</button></div></div>${adminAppointmentTable(state.data.appointments)}</section>`;
+  return `<section class="card"><div class="card-head"><h2>預約清單</h2><div class="actions"><div class="segmented"><button class="active">全部</button></div><button class="button small" data-action="new-appointment">＋ 新增預約</button></div></div>${adminAppointmentTable(state.data.appointments)}</section>`;
 }
 
 function renderMembers() {
@@ -224,15 +224,47 @@ function renderSales() {
 }
 
 function renderSettings() {
-  return `<div class="grid cols-2"><section class="card"><div class="card-head"><h2>服務及產品</h2><span class="muted small">可於資料庫修改</span></div><div class="list">${state.data.catalog.map(item => `<div class="list-item"><div class="list-item-main"><strong>${esc(item.name)}</strong><span>${item.kind === "product" ? "髮型產品" : `${item.duration_minutes}分鐘`}</span></div><strong>${formatMoney(item.price)}</strong></div>`).join("")}</div></section>
+  return `<div class="grid cols-2"><section class="card"><div class="card-head"><h2>服務及產品</h2><button class="button small" data-action="new-catalog-item">＋ 新增項目</button></div><div class="list">${state.data.catalog.map(item => `<div class="list-item"><div class="list-item-main"><strong>${esc(item.name)}</strong><span>${item.kind === "product" ? "髮型產品" : `${item.duration_minutes}分鐘`}</span></div><strong>${formatMoney(item.price)}</strong></div>`).join("")}</div></section>
   <section class="card"><div class="card-head"><h2>髮型師</h2><span class="muted small">星期一至日</span></div><div class="list">${state.data.stylists.map(item => `<div class="list-item"><div class="list-item-main"><strong>${esc(item.name)}</strong><span>11:00–21:00</span></div><span class="badge active">服務中</span></div>`).join("")}</div></section></div>`;
 }
 
 function renderModal() {
   if (state.modal.type === "member") return memberModal();
+  if (state.modal.type === "appointment") return appointmentModal();
+  if (state.modal.type === "catalog") return catalogModal();
   if (state.modal.type === "sale") return saleModal();
   if (state.modal.type === "stamps") return stampModal();
   return "";
+}
+
+function appointmentModal() {
+  const members = state.data.profiles.filter(item => item.role === "member");
+  const services = state.data.catalog.filter(item => item.kind === "service");
+  const firstService = services[0];
+  return `<div class="modal-backdrop"><section class="modal"><div class="modal-head"><div><p class="eyebrow">Admin Appointment</p><h2>新增預約</h2></div><button class="icon-button" data-action="close-modal">×</button></div>
+    <form id="appointment-form" class="form-grid">
+      <label class="field span-2"><span>會員</span><select name="memberId" required>${members.map(item => `<option value="${item.id}">${esc(item.name)} · ${esc(item.phone || "")}</option>`).join("")}</select></label>
+      <label class="field"><span>服務</span><select name="serviceId" id="appointment-service" required>${services.map(item => `<option value="${item.id}" data-duration="${item.duration_minutes}">${esc(item.name)} · ${formatMoney(item.price)}</option>`).join("")}</select></label>
+      <label class="field"><span>髮型師</span><select name="stylistId" required>${state.data.stylists.map(item => `<option value="${item.id}">${esc(item.name)}</option>`).join("")}</select></label>
+      <label class="field"><span>日期</span><input name="date" type="date" required min="${localDate(new Date())}"></label>
+      <label class="field"><span>開始時間</span><select name="time" id="appointment-time" required>${generateTimeSlots(firstService?.duration_minutes).map(time => `<option>${time}</option>`).join("")}</select></label>
+      <label class="field"><span>狀態</span><select name="status"><option value="confirmed">已確認</option><option value="pending">待確認</option></select></label>
+      <label class="field span-2"><span>備註（選填）</span><textarea name="note" placeholder="例如：客人要求、敏感事項"></textarea></label>
+      <button class="button primary full span-2" type="submit" ${members.length && services.length ? "" : "disabled"}>建立預約</button>
+    </form>
+  </section></div>`;
+}
+
+function catalogModal() {
+  return `<div class="modal-backdrop"><section class="modal"><div class="modal-head"><div><p class="eyebrow">Service & Product</p><h2>新增項目</h2></div><button class="icon-button" data-action="close-modal">×</button></div>
+    <form id="catalog-form" class="form-grid">
+      <label class="field"><span>類型</span><select name="kind" id="catalog-kind"><option value="service">服務</option><option value="product">產品</option></select></label>
+      <label class="field"><span>名稱</span><input name="name" required maxlength="80" placeholder="例如：挑染"></label>
+      <label class="field"><span>價格（HK$）</span><input name="price" type="number" min="0" step="1" required placeholder="0"></label>
+      <label class="field"><span>所需時間</span><select name="durationMinutes" id="catalog-duration"><option value="30">30分鐘</option><option value="60" selected>60分鐘</option><option value="90">90分鐘</option><option value="120">120分鐘</option><option value="150">150分鐘</option><option value="180">180分鐘</option></select></label>
+      <button class="button primary full span-2" type="submit">新增至項目清單</button>
+    </form>
+  </section></div>`;
 }
 
 function memberModal() {
@@ -254,7 +286,11 @@ function saleModal() {
   const members = state.data.profiles.filter(item => item.role === "member");
   const selectedMember = state.modal.memberId || members[0]?.id;
   const balance = memberBalance(selectedMember);
-  if (!state.saleItems.length) state.saleItems = [{ kind: "service", name: "洗剪吹", quantity: 1, unitPrice: 280 }];
+  if (!state.saleItems.length) {
+    const appointment = state.data.appointments.find(item => item.id === state.modal.appointmentId);
+    const initial = state.data.catalog.find(item => item.id === appointment?.service_id) || state.data.catalog[0];
+    if (initial) state.saleItems = [catalogToSaleItem(initial)];
+  }
   const summary = calculateSale(state.saleItems, balance, state.modal.redemption || 0);
   return `<div class="modal-backdrop"><section class="modal wide"><div class="modal-head"><h2>記錄消費</h2><button class="icon-button" data-action="close-modal">×</button></div>
     <form id="sale-form">
@@ -273,8 +309,8 @@ function saleModal() {
 
 function saleItemRow(item,index) {
   return `<div class="list-item"><div class="form-grid" style="flex:1">
-    <label class="field"><span>類型</span><select data-sale-field="kind" data-index="${index}"><option value="service" ${item.kind==="service"?"selected":""}>服務</option><option value="product" ${item.kind==="product"?"selected":""}>產品</option></select></label>
-    <label class="field"><span>項目</span><input data-sale-field="name" data-index="${index}" value="${esc(item.name)}" required></label>
+    <label class="field span-2"><span>項目</span><select data-sale-catalog data-index="${index}" required>${catalogOptions(item.catalogId)}</select></label>
+    <label class="field"><span>類型</span><input value="${item.kind === "product" ? "產品" : "服務"}" disabled></label>
     <label class="field"><span>數量</span><input data-sale-field="quantity" data-index="${index}" type="number" min="1" value="${item.quantity}"></label>
     <label class="field"><span>單價</span><input data-sale-field="unitPrice" data-index="${index}" type="number" min="0" step="0.01" value="${item.unitPrice}"></label>
   </div>${state.saleItems.length>1?`<button class="icon-button" type="button" data-action="remove-sale-item" data-index="${index}">×</button>`:""}</div>`;
@@ -322,14 +358,19 @@ function stampLedgerList(items, admin = false) {
 function bindForms() {
   root.querySelector("#login-form")?.addEventListener("submit", onLogin);
   root.querySelector("#member-form")?.addEventListener("submit", onMember);
+  root.querySelector("#appointment-form")?.addEventListener("submit", onAdminAppointment);
+  root.querySelector("#catalog-form")?.addEventListener("submit", onCatalogItem);
   root.querySelector("#booking-form")?.addEventListener("submit", onBooking);
   root.querySelector("#sale-form")?.addEventListener("submit", onSale);
   root.querySelector("#stamp-form")?.addEventListener("submit", onStampAdjustment);
   root.querySelector("#booking-service")?.addEventListener("change", updateBookingTimes);
+  root.querySelector("#appointment-service")?.addEventListener("change", updateAdminAppointmentTimes);
+  root.querySelector("#catalog-kind")?.addEventListener("change", updateCatalogDuration);
   root.querySelector("#member-search")?.addEventListener("input", filterMembers);
   root.querySelector("#sale-member")?.addEventListener("change", event => { state.modal.memberId = event.target.value; render(); });
   root.querySelector("#sale-redemption")?.addEventListener("change", event => { state.modal.redemption = Number(event.target.value); render(); });
   root.querySelectorAll("[data-sale-field]").forEach(input => input.addEventListener("change", updateSaleItem));
+  root.querySelectorAll("[data-sale-catalog]").forEach(input => input.addEventListener("change", updateSaleCatalog));
 }
 
 root.addEventListener("click", async event => {
@@ -347,9 +388,11 @@ root.addEventListener("click", async event => {
     if (action === "cancel-appointment") { await api.cancelAppointment(target.dataset.id,state.profile.id); toast("預約已取消。"); await refresh(); }
     if (action === "appointment-status") { await api.updateAppointmentStatus(target.dataset.id,target.dataset.status); toast("預約狀態已更新。"); await refresh(); }
     if (action === "new-member") { state.modal={type:"member"}; render(); }
+    if (action === "new-appointment") { state.modal={type:"appointment"}; render(); }
+    if (action === "new-catalog-item") { state.modal={type:"catalog"}; render(); }
     if (["new-sale","sale-member","sale-from-appointment"].includes(action)) { state.modal={type:"sale",memberId:target.dataset.member||null,appointmentId:target.dataset.id||null,redemption:0}; state.saleItems=[]; render(); }
     if (["adjust-stamps","stamps-member"].includes(action)) { state.modal={type:"stamps",memberId:target.dataset.member||null}; render(); }
-    if (action === "add-sale-item") { state.saleItems.push({kind:"service",name:"",quantity:1,unitPrice:0}); render(); }
+    if (action === "add-sale-item") { const first=state.data.catalog[0]; if(first) state.saleItems.push(catalogToSaleItem(first)); render(); }
     if (action === "remove-sale-item") { state.saleItems.splice(Number(target.dataset.index),1); render(); }
   } catch (error) { toast(error.message,true); }
 });
@@ -379,6 +422,26 @@ async function onMember(event) {
   });
 }
 
+async function onAdminAppointment(event) {
+  event.preventDefault(); const form=Object.fromEntries(new FormData(event.currentTarget));
+  await busy(event.submitter, async()=>{
+    await api.createAppointment(form);
+    state.modal=null;
+    toast("新預約已建立。");
+    await refresh();
+  });
+}
+
+async function onCatalogItem(event) {
+  event.preventDefault(); const form=Object.fromEntries(new FormData(event.currentTarget));
+  await busy(event.submitter, async()=>{
+    await api.createCatalogItem({...form,durationMinutes:form.kind === "product" ? 0 : Number(form.durationMinutes)});
+    state.modal=null;
+    toast("新項目已加入清單。");
+    await refresh();
+  });
+}
+
 async function onBooking(event) {
   event.preventDefault(); const form=Object.fromEntries(new FormData(event.currentTarget));
   await busy(event.submitter, async()=>{ await api.createAppointment({...form,memberId:state.profile.id}); toast("預約已提交，待管理員確認。"); state.view="appointments"; await refresh(); });
@@ -400,9 +463,38 @@ function updateBookingTimes(event) {
   select.innerHTML=generateTimeSlots(Number(option.dataset.duration)).map(time=>`<option>${time}</option>`).join("");
 }
 
+function updateAdminAppointmentTimes(event) {
+  const option=event.target.selectedOptions[0]; const select=root.querySelector("#appointment-time");
+  select.innerHTML=generateTimeSlots(Number(option.dataset.duration)).map(time=>`<option>${time}</option>`).join("");
+}
+
+function updateCatalogDuration(event) {
+  const duration=root.querySelector("#catalog-duration");
+  const isProduct=event.target.value === "product";
+  duration.disabled=isProduct;
+  if(isProduct) duration.value="30";
+}
+
+function updateSaleCatalog(event) {
+  const index=Number(event.target.dataset.index);
+  const catalogItem=state.data.catalog.find(item=>item.id===event.target.value);
+  if(!catalogItem) return;
+  const quantity=state.saleItems[index]?.quantity || 1;
+  state.saleItems[index]={...catalogToSaleItem(catalogItem),quantity};
+  render();
+}
+
 function updateSaleItem(event) {
   const index=Number(event.target.dataset.index); const field=event.target.dataset.saleField;
   state.saleItems[index][field]=["quantity","unitPrice"].includes(field)?Number(event.target.value):event.target.value; render();
+}
+
+function catalogToSaleItem(item){return {catalogId:item.id,kind:item.kind,name:item.name,quantity:1,unitPrice:Number(item.price)||0};}
+function catalogOptions(selectedId){
+  const services=state.data.catalog.filter(item=>item.kind==="service");
+  const products=state.data.catalog.filter(item=>item.kind==="product");
+  const options=items=>items.map(item=>`<option value="${item.id}" ${item.id===selectedId?"selected":""}>${esc(item.name)} · ${formatMoney(item.price)}</option>`).join("");
+  return `${services.length?`<optgroup label="服務">${options(services)}</optgroup>`:""}${products.length?`<optgroup label="產品">${options(products)}</optgroup>`:""}`;
 }
 
 function filterMembers(event) {

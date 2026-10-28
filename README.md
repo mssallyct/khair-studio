@@ -5,7 +5,8 @@
 ## 已實作功能
 
 - 管理員新增及搜尋會員（香港 8 位電話格式）
-- 管理員處理服務、髮型師、日期及時間預約
+- 管理員新增及處理服務、髮型師、日期及時間預約
+- 管理員可新增服務／產品；記錄消費時以下拉清單選擇項目並自動帶入價格
 - 預約狀態：待確認、已確認、已完成、已取消、沒有出席
 - 消費、消費明細及電子印花帳簿
 - 每張單實收每滿 HK$600 得 1 印花；不足部分不累積
@@ -40,6 +41,8 @@ Demo Mode 登入：
 - 管理員：`mssallyct@gmail.com`
 - 密碼欄可輸入任何內容（只限 Demo Mode）
 
+GitHub Pages 簡單版使用 Demo Mode，資料只儲存在目前瀏覽器／裝置。請定期使用「匯出 Excel」備份；清除網站資料或更換裝置不會自動帶走舊資料。
+
 ## 連接中央資料庫
 
 1. 在 Supabase 建立專案。
@@ -53,3 +56,5 @@ Demo Mode 登入：
 ## 發佈
 
 Repository 已包括 GitHub Pages workflow。推送至 `main` 後，於 GitHub Settings → Pages 將 Source 設為 **GitHub Actions**。
+
+公開網址：`https://mssallyct.github.io/khair-studio/`
