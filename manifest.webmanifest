@@ -1,0 +1,15 @@
+{
+  "name": "K.Hair Studio 會員系統",
+  "short_name": "K.Hair",
+  "description": "K.Hair Studio 預約、消費及電子印花會員 App",
+  "lang": "zh-HK",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#f5f1e9",
+  "theme_color": "#1f2925",
+  "icons": [
+    { "src": "assets/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
