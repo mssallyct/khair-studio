@@ -10,7 +10,6 @@ const state = {
   profile: null,
   data: null,
   view: "dashboard",
-  authMode: "login",
   loading: false,
   modal: null,
   saleItems: []
@@ -23,7 +22,11 @@ async function boot() {
   state.session = await api.getSession();
   if (state.session) {
     state.profile = await api.getProfile();
-    if (!state.profile) await api.signOut();
+    if (!state.profile || state.profile.role !== "admin") {
+      await api.signOut();
+      state.session = null;
+      state.profile = null;
+    }
   }
   await refresh();
 }
@@ -43,7 +46,6 @@ function render() {
 }
 
 function renderAuth() {
-  const isLogin = state.authMode === "login";
   return `
     <main class="auth-shell">
       <section class="brand-panel">
@@ -57,15 +59,11 @@ function renderAuth() {
       </section>
       <section class="auth-panel">
         <div class="auth-card">
-          <p class="eyebrow">Welcome to K.Hair</p>
-          <h2>${isLogin ? "歡迎回來" : "成為會員"}</h2>
-          <p class="muted">${isLogin ? "登入查看預約及電子印花。" : "登記後即可預約，購買髮型產品享95折。"}</p>
-          <div class="auth-tabs">
-            <button class="auth-tab ${isLogin ? "active" : ""}" data-auth-mode="login">登入</button>
-            <button class="auth-tab ${!isLogin ? "active" : ""}" data-auth-mode="register">會員登記</button>
-          </div>
-          ${isLogin ? loginForm() : registerForm()}
-          ${api.demoMode ? `<div class="demo-note"><strong>Demo Mode</strong><br>管理員：mssallyct@gmail.com<br>會員：member@khair.demo<br>密碼可輸入任何內容</div>` : ""}
+          <p class="eyebrow">K.Hair Studio · Hong Kong</p>
+          <h2>管理員登入</h2>
+          <p class="muted">只供獲授權的 K.Hair Studio 管理員使用。會員由管理員在系統內新增，不設自行註冊。</p>
+          ${loginForm()}
+          ${api.demoMode ? `<div class="demo-note"><strong>私人測試模式</strong><br>管理員：mssallyct@gmail.com<br>密碼可輸入任何內容</div>` : ""}
         </div>
       </section>
     </main>`;
@@ -76,18 +74,6 @@ function loginForm() {
     <label class="field"><span>電郵</span><input name="email" type="email" autocomplete="email" required value="${api.demoMode ? "mssallyct@gmail.com" : ""}"></label>
     <label class="field"><span>密碼</span><input name="password" type="password" autocomplete="current-password" required minlength="6" value="${api.demoMode ? "demo123" : ""}"></label>
     <button class="button primary full" type="submit">登入 K.Hair Studio</button>
-  </form>`;
-}
-
-function registerForm() {
-  return `<form id="register-form" class="form-grid">
-    <label class="field span-2"><span>姓名</span><input name="name" required autocomplete="name"></label>
-    <label class="field"><span>電話</span><input name="phone" type="tel" required autocomplete="tel"></label>
-    <label class="field"><span>生日</span><input name="birthday" type="date"></label>
-    <label class="field span-2"><span>電郵</span><input name="email" type="email" required autocomplete="email"></label>
-    <label class="field span-2"><span>密碼</span><input name="password" type="password" required minlength="8" autocomplete="new-password"></label>
-    <label class="field span-2"><span>介紹人編號（如有）</span><input name="referralCode" maxlength="12" placeholder="例如 KHAIRVIP"></label>
-    <button class="button primary full span-2" type="submit">建立會員帳戶</button>
   </form>`;
 }
 
@@ -223,7 +209,7 @@ function renderAdminAppointments() {
 
 function renderMembers() {
   const members = state.data.profiles.filter(item => item.role === "member");
-  return `<section class="card"><div class="card-head"><h2>會員名單</h2><span class="muted">${members.length} 位會員</span></div>
+  return `<section class="card"><div class="card-head"><h2>會員名單</h2><div class="actions"><span class="muted">${members.length} 位會員</span><button class="button small" data-action="new-member">＋ 新增會員</button></div></div>
     <div class="filter-bar"><input id="member-search" placeholder="搜尋姓名、電話或電郵"></div>
     <div class="table-wrap"><table><thead><tr><th>會員</th><th>電話</th><th>生日</th><th>印花</th><th>介紹編號</th><th>操作</th></tr></thead><tbody id="member-table-body">${members.map(memberRow).join("")}</tbody></table></div>
   </section>`;
@@ -242,9 +228,25 @@ function renderSettings() {
 }
 
 function renderModal() {
+  if (state.modal.type === "member") return memberModal();
   if (state.modal.type === "sale") return saleModal();
   if (state.modal.type === "stamps") return stampModal();
   return "";
+}
+
+function memberModal() {
+  const members = state.data.profiles.filter(item => item.role === "member");
+  return `<div class="modal-backdrop"><section class="modal"><div class="modal-head"><div><p class="eyebrow">Hong Kong Member</p><h2>新增會員</h2></div><button class="icon-button" data-action="close-modal">×</button></div>
+    <form id="member-form" class="form-grid">
+      <label class="field span-2"><span>會員姓名</span><input name="name" required maxlength="80" autocomplete="off"></label>
+      <label class="field"><span>香港電話</span><input name="phone" type="tel" inputmode="numeric" required maxlength="13" placeholder="9123 4567" autocomplete="off"></label>
+      <label class="field"><span>生日（選填）</span><input name="birthday" type="date"></label>
+      <label class="field span-2"><span>電郵（選填）</span><input name="email" type="email" autocomplete="off" placeholder="沒有可留空"></label>
+      <label class="field span-2"><span>介紹人（選填）</span><select name="referrerId"><option value="">沒有介紹人</option>${members.map(item => `<option value="${item.id}">${esc(item.name)} · ${esc(item.phone || "")}</option>`).join("")}</select></label>
+      <p class="muted small span-2">會員不會獲得登入帳戶；所有資料只由管理員處理。</p>
+      <button class="button primary full span-2" type="submit">建立會員</button>
+    </form>
+  </section></div>`;
 }
 
 function saleModal() {
@@ -303,7 +305,7 @@ function adminAppointmentTable(items) {
 }
 
 function memberRow(item) {
-  return `<tr data-member-search="${esc(`${item.name} ${item.phone} ${item.email}`.toLowerCase())}"><td><strong>${esc(item.name)}</strong><br><span class="muted small">${esc(item.email)}</span></td><td>${esc(item.phone||"—")}</td><td>${esc(item.birthday||"—")}</td><td>${memberBalance(item.id)}</td><td>${esc(item.referral_code||"—")}</td><td><div class="actions"><button class="button ghost small" data-action="sale-member" data-member="${item.id}">消費</button><button class="button ghost small" data-action="stamps-member" data-member="${item.id}">印花</button></div></td></tr>`;
+  return `<tr data-member-search="${esc(`${item.name} ${item.phone || ""} ${item.email || ""}`.toLowerCase())}"><td><strong>${esc(item.name)}</strong><br><span class="muted small">${esc(item.email || "未有電郵")}</span></td><td>${esc(item.phone||"—")}</td><td>${esc(item.birthday||"—")}</td><td>${memberBalance(item.id)}</td><td>${esc(item.referral_code||"—")}</td><td><div class="actions"><button class="button ghost small" data-action="sale-member" data-member="${item.id}">消費</button><button class="button ghost small" data-action="stamps-member" data-member="${item.id}">印花</button></div></td></tr>`;
 }
 
 function saleList(items, admin = false) {
@@ -318,7 +320,7 @@ function stampLedgerList(items, admin = false) {
 
 function bindForms() {
   root.querySelector("#login-form")?.addEventListener("submit", onLogin);
-  root.querySelector("#register-form")?.addEventListener("submit", onRegister);
+  root.querySelector("#member-form")?.addEventListener("submit", onMember);
   root.querySelector("#booking-form")?.addEventListener("submit", onBooking);
   root.querySelector("#sale-form")?.addEventListener("submit", onSale);
   root.querySelector("#stamp-form")?.addEventListener("submit", onStampAdjustment);
@@ -342,6 +344,7 @@ root.addEventListener("click", async event => {
     if (action === "close-modal") { state.modal=null; state.saleItems=[]; render(); }
     if (action === "cancel-appointment") { await api.cancelAppointment(target.dataset.id,state.profile.id); toast("預約已取消。"); await refresh(); }
     if (action === "appointment-status") { await api.updateAppointmentStatus(target.dataset.id,target.dataset.status); toast("預約狀態已更新。"); await refresh(); }
+    if (action === "new-member") { state.modal={type:"member"}; render(); }
     if (["new-sale","sale-member","sale-from-appointment"].includes(action)) { state.modal={type:"sale",memberId:target.dataset.member||null,appointmentId:target.dataset.id||null,redemption:0}; state.saleItems=[]; render(); }
     if (["adjust-stamps","stamps-member"].includes(action)) { state.modal={type:"stamps",memberId:target.dataset.member||null}; render(); }
     if (action === "add-sale-item") { state.saleItems.push({kind:"service",name:"",quantity:1,unitPrice:0}); render(); }
@@ -349,19 +352,29 @@ root.addEventListener("click", async event => {
   } catch (error) { toast(error.message,true); }
 });
 
-root.addEventListener("click", event => {
-  const mode = event.target.closest("[data-auth-mode]")?.dataset.authMode;
-  if (mode) { state.authMode=mode; render(); }
-});
-
 async function onLogin(event) {
   event.preventDefault(); const form = new FormData(event.currentTarget);
-  await busy(event.submitter, async () => { state.session=await api.signIn(form.get("email"),form.get("password")); state.profile=await api.getProfile(); state.view="dashboard"; await refresh(); });
+  await busy(event.submitter, async () => {
+    state.session=await api.signIn(form.get("email"),form.get("password"));
+    state.profile=await api.getProfile();
+    if (!state.profile || state.profile.role !== "admin") {
+      await api.signOut();
+      Object.assign(state,{session:null,profile:null,data:null});
+      throw new Error("此系統只供管理員使用。");
+    }
+    state.view="dashboard";
+    await refresh();
+  });
 }
 
-async function onRegister(event) {
+async function onMember(event) {
   event.preventDefault(); const form = Object.fromEntries(new FormData(event.currentTarget));
-  await busy(event.submitter, async () => { const result=await api.signUp(form); if (!result.access_token && !api.demoMode) { toast("登記成功，請先到電郵完成驗證後再登入。"); state.authMode="login"; render(); return; } state.session=result; state.profile=await api.getProfile(); await refresh(); });
+  await busy(event.submitter, async () => {
+    await api.createMember({...form,adminId:state.profile.id});
+    state.modal=null;
+    toast("新會員已建立。");
+    await refresh();
+  });
 }
 
 async function onBooking(event) {
@@ -410,8 +423,12 @@ function stampType(type) { return ({spending:"消費印花",birthday:"生日獎�
 function statCard(label,value,hint){return `<section class="card stat"><span class="label">${label}</span><strong class="value">${value}</strong><span class="hint">${hint}</span></section>`;}
 function profileRow(label,value){return `<div class="list-item"><span class="muted">${label}</span><strong>${esc(value)}</strong></div>`;}
 function empty(text){return `<div class="empty">${text}</div>`;}
-function todayText(){return new Intl.DateTimeFormat("zh-HK",{dateStyle:"full"}).format(new Date());}
-function localDate(date){const y=date.getFullYear();const m=String(date.getMonth()+1).padStart(2,"0");const d=String(date.getDate()).padStart(2,"0");return `${y}-${m}-${d}`;}
+function todayText(){return new Intl.DateTimeFormat("zh-HK",{dateStyle:"full",timeZone:"Asia/Hong_Kong"}).format(new Date());}
+function localDate(date){
+  const parts=new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Hong_Kong",year:"numeric",month:"2-digit",day:"2-digit"}).formatToParts(date);
+  const values=Object.fromEntries(parts.map(part=>[part.type,part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
+}
 function closeMenu(){document.querySelector("#sidebar")?.classList.remove("open");}
 function toast(message,error=false){toastEl.textContent=message;toastEl.className=`toast show ${error?"error":""}`;clearTimeout(toast.timer);toast.timer=setTimeout(()=>toastEl.className="toast",3200);}
 function esc(value){return String(value??"").replace(/[&<>'"]/g,char=>({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"})[char]);}

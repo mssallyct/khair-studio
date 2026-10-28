@@ -1,4 +1,4 @@
-const CACHE = "khair-v1";
+const CACHE = "khair-v2";
 const ASSETS = ["./", "./index.html", "./styles.css", "./js/app.js", "./js/api.js", "./js/demo-store.js", "./js/rules.js", "./assets/icon.svg", "./manifest.webmanifest", "./config.js"];
 
 self.addEventListener("install", event => event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(ASSETS))));

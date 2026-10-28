@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { calculateSale, generateTimeSlots, isBirthdayMonth, isValidBusinessSlot, redemptionForBalance, stampsFromAmount } from "../js/rules.js";
+import { calculateSale, generateTimeSlots, isBirthdayMonth, isValidBusinessSlot, normalizeHongKongPhone, redemptionForBalance, stampsFromAmount } from "../js/rules.js";
 
 test("每張單按實收每滿600元給一個印花，餘額不累積", () => {
   assert.equal(stampsFromAmount(599),0);
@@ -45,4 +45,10 @@ test("營業時間為11:00至21:00，每30分鐘一節", () => {
 test("生日月份判斷", () => {
   assert.equal(isBirthdayMonth("1990-09-16",new Date("2026-09-02T00:00:00")),true);
   assert.equal(isBirthdayMonth("1990-10-16",new Date("2026-09-02T00:00:00")),false);
+});
+
+test("香港電話統一為8位格式", () => {
+  assert.equal(normalizeHongKongPhone("91234567"),"9123 4567");
+  assert.equal(normalizeHongKongPhone("+852 2123 4567"),"2123 4567");
+  assert.throws(()=>normalizeHongKongPhone("1234567"),/香港 8 位電話號碼/);
 });

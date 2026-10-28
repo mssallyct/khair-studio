@@ -52,9 +52,17 @@ export function calculateSale(items, stampBalance = 0, requestedRedemption = 0) 
 
 export function isBirthdayMonth(birthday, saleDate = new Date()) {
   if (!birthday) return false;
-  const date = new Date(`${birthday}T00:00:00`);
-  if (Number.isNaN(date.getTime())) return false;
-  return date.getMonth() === saleDate.getMonth();
+  const match = /^\d{4}-(\d{2})-\d{2}$/.exec(String(birthday));
+  if (!match || Number(match[1]) < 1 || Number(match[1]) > 12) return false;
+  const saleMonth = Number(new Intl.DateTimeFormat("en", { month: "numeric", timeZone: "Asia/Hong_Kong" }).format(saleDate));
+  return Number(match[1]) === saleMonth;
+}
+
+export function normalizeHongKongPhone(value) {
+  let digits = String(value || "").replace(/\D/g, "");
+  if (digits.length === 11 && digits.startsWith("852")) digits = digits.slice(3);
+  if (!/^[2-9]\d{7}$/.test(digits)) throw new Error("請輸入有效的香港 8 位電話號碼。");
+  return `${digits.slice(0, 4)} ${digits.slice(4)}`;
 }
 
 export function generateTimeSlots(durationMinutes = 30) {
@@ -81,7 +89,7 @@ export function formatMoney(value) {
 export function formatDateTime(value) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "—";
-  return new Intl.DateTimeFormat("zh-HK", { month: "short", day: "numeric", weekday: "short", hour: "2-digit", minute: "2-digit", hour12: false }).format(date);
+  return new Intl.DateTimeFormat("zh-HK", { month: "short", day: "numeric", weekday: "short", hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Hong_Kong" }).format(date);
 }
 
 export function toHongKongIso(date, time) {

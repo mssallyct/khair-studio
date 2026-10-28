@@ -20,8 +20,8 @@ do $$ begin
 exception when duplicate_object then null; end $$;
 
 create table if not exists public.profiles (
-  id uuid primary key references auth.users(id) on delete cascade,
-  email text not null unique,
+  id uuid primary key default gen_random_uuid(),
+  email text unique,
   name text not null,
   phone text,
   birthday date,
@@ -127,6 +127,9 @@ create index if not exists appointments_member_idx on public.appointments(member
 create index if not exists appointments_stylist_idx on public.appointments(stylist_id,start_at);
 create index if not exists sales_member_idx on public.sales(member_id,completed_at desc);
 create index if not exists stamp_ledger_member_idx on public.stamp_ledger(member_id,created_at desc);
+create unique index if not exists profiles_member_phone_unique
+  on public.profiles ((regexp_replace(phone,'\D','','g')))
+  where role = 'member' and phone is not null;
 
 create or replace function public.is_admin()
 returns boolean language sql stable security definer set search_path = public
@@ -160,6 +163,53 @@ end $$;
 
 drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created after insert on auth.users for each row execute function public.handle_new_user();
+
+create or replace function public.create_member(
+  p_name text,
+  p_phone text,
+  p_email text default null,
+  p_birthday date default null,
+  p_referrer_id uuid default null
+)
+returns public.profiles
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  phone_digits text;
+  normalized_phone text;
+  normalized_email text;
+  result public.profiles;
+begin
+  if not public.is_admin() then raise exception '只有管理員可新增會員'; end if;
+  if trim(coalesce(p_name,'')) = '' then raise exception '請輸入會員姓名'; end if;
+
+  phone_digits := regexp_replace(coalesce(p_phone,''),'\D','','g');
+  if length(phone_digits) = 11 and left(phone_digits,3) = '852' then phone_digits := right(phone_digits,8); end if;
+  if phone_digits !~ '^[2-9][0-9]{7}$' then raise exception '請輸入有效的香港8位電話號碼'; end if;
+  normalized_phone := left(phone_digits,4) || ' ' || right(phone_digits,4);
+  normalized_email := nullif(lower(trim(coalesce(p_email,''))), '');
+
+  if exists(select 1 from public.profiles where role='member' and regexp_replace(phone,'\D','','g')=phone_digits) then
+    raise exception '此電話已登記會員';
+  end if;
+  if normalized_email is not null and exists(select 1 from public.profiles where lower(email)=normalized_email) then
+    raise exception '此電郵已登記';
+  end if;
+  if p_referrer_id is not null and not exists(select 1 from public.profiles where id=p_referrer_id and role='member' and active) then
+    raise exception '找不到有效介紹人';
+  end if;
+
+  insert into public.profiles(email,name,phone,birthday,role)
+  values(normalized_email,trim(p_name),normalized_phone,p_birthday,'member')
+  returning * into result;
+
+  if p_referrer_id is not null then
+    insert into public.referrals(referrer_id,referred_member_id) values(p_referrer_id,result.id);
+  end if;
+  return result;
+end $$;
 
 create or replace function public.protect_profile_fields()
 returns trigger language plpgsql security definer set search_path = public
@@ -283,44 +333,45 @@ alter table public.blockouts enable row level security;
 alter table public.settings enable row level security;
 
 drop policy if exists profiles_select on public.profiles;
-create policy profiles_select on public.profiles for select to authenticated using(id=auth.uid() or public.is_admin());
+create policy profiles_select on public.profiles for select to authenticated using(public.is_admin());
 drop policy if exists profiles_update on public.profiles;
-create policy profiles_update on public.profiles for update to authenticated using(id=auth.uid() or public.is_admin()) with check(id=auth.uid() or public.is_admin());
+create policy profiles_update on public.profiles for update to authenticated using(public.is_admin()) with check(public.is_admin());
 
 drop policy if exists stylists_read on public.stylists;
-create policy stylists_read on public.stylists for select to authenticated using(active or public.is_admin());
+create policy stylists_read on public.stylists for select to authenticated using(public.is_admin());
 drop policy if exists stylists_admin on public.stylists;
 create policy stylists_admin on public.stylists for all to authenticated using(public.is_admin()) with check(public.is_admin());
 drop policy if exists catalog_read on public.catalog;
-create policy catalog_read on public.catalog for select to authenticated using(active or public.is_admin());
+create policy catalog_read on public.catalog for select to authenticated using(public.is_admin());
 drop policy if exists catalog_admin on public.catalog;
 create policy catalog_admin on public.catalog for all to authenticated using(public.is_admin()) with check(public.is_admin());
 
 drop policy if exists appointments_select on public.appointments;
-create policy appointments_select on public.appointments for select to authenticated using(member_id=auth.uid() or public.is_admin());
+create policy appointments_select on public.appointments for select to authenticated using(public.is_admin());
 drop policy if exists appointments_insert on public.appointments;
-create policy appointments_insert on public.appointments for insert to authenticated with check(member_id=auth.uid() or public.is_admin());
+create policy appointments_insert on public.appointments for insert to authenticated with check(public.is_admin());
 drop policy if exists appointments_update on public.appointments;
-create policy appointments_update on public.appointments for update to authenticated using(member_id=auth.uid() or public.is_admin()) with check(member_id=auth.uid() or public.is_admin());
+create policy appointments_update on public.appointments for update to authenticated using(public.is_admin()) with check(public.is_admin());
 
 drop policy if exists sales_select on public.sales;
-create policy sales_select on public.sales for select to authenticated using(member_id=auth.uid() or public.is_admin());
+create policy sales_select on public.sales for select to authenticated using(public.is_admin());
 drop policy if exists sale_items_select on public.sale_items;
-create policy sale_items_select on public.sale_items for select to authenticated using(exists(select 1 from public.sales s where s.id=sale_id and (s.member_id=auth.uid() or public.is_admin())));
+create policy sale_items_select on public.sale_items for select to authenticated using(public.is_admin());
 drop policy if exists stamps_select on public.stamp_ledger;
-create policy stamps_select on public.stamp_ledger for select to authenticated using(member_id=auth.uid() or public.is_admin());
+create policy stamps_select on public.stamp_ledger for select to authenticated using(public.is_admin());
 drop policy if exists referrals_select on public.referrals;
-create policy referrals_select on public.referrals for select to authenticated using(referrer_id=auth.uid() or referred_member_id=auth.uid() or public.is_admin());
+create policy referrals_select on public.referrals for select to authenticated using(public.is_admin());
 drop policy if exists blockouts_read on public.blockouts;
-create policy blockouts_read on public.blockouts for select to authenticated using(true);
+create policy blockouts_read on public.blockouts for select to authenticated using(public.is_admin());
 drop policy if exists blockouts_admin on public.blockouts;
 create policy blockouts_admin on public.blockouts for all to authenticated using(public.is_admin()) with check(public.is_admin());
 drop policy if exists settings_read on public.settings;
-create policy settings_read on public.settings for select to authenticated using(true);
+create policy settings_read on public.settings for select to authenticated using(public.is_admin());
 drop policy if exists settings_admin on public.settings;
 create policy settings_admin on public.settings for all to authenticated using(public.is_admin()) with check(public.is_admin());
 
 grant select on public.member_stamp_balances to authenticated;
+grant execute on function public.create_member(text,text,text,date,uuid) to authenticated;
 grant execute on function public.adjust_stamps(uuid,integer,text) to authenticated;
 grant execute on function public.complete_sale(uuid,uuid,jsonb,integer) to authenticated;
 

@@ -1,4 +1,4 @@
-import { calculateSale, isBirthdayMonth, toHongKongIso } from "./rules.js";
+import { calculateSale, isBirthdayMonth, normalizeHongKongPhone, toHongKongIso } from "./rules.js";
 
 const STORAGE_KEY = "khair-demo-v1";
 
@@ -22,22 +22,31 @@ export class DemoStore {
   id(prefix) { return `${prefix}-${crypto.randomUUID()}`; }
 
   async signIn(email) {
-    let profile = this.data.profiles.find(item => item.email.toLowerCase() === email.toLowerCase());
-    if (!profile) throw new Error("Demo Mode 找不到此帳戶，請使用示範帳戶或先註冊。");
+    let profile = this.data.profiles.find(item => String(item.email || "").toLowerCase() === email.toLowerCase());
+    if (!profile || profile.role !== "admin") throw new Error("此系統只供管理員使用。");
     this.session = { access_token: "demo", user: { id: profile.id, email: profile.email } };
     return this.session;
   }
 
-  async signUp({ email, name, phone, birthday, referralCode }) {
-    if (this.data.profiles.some(item => item.email.toLowerCase() === email.toLowerCase())) throw new Error("此電郵已登記。");
-    const profile = { id: this.id("member"), email, name, phone, birthday: birthday || null, referral_code: randomCode(name), role: "member", active: true, created_at: new Date().toISOString() };
+  async signUp() {
+    throw new Error("此系統不設會員自行註冊。");
+  }
+
+  async createMember({ name, phone, email, birthday, referrerId, adminId }) {
+    const normalizedPhone = normalizeHongKongPhone(phone);
+    const normalizedEmail = String(email || "").trim().toLowerCase();
+    const memberName = String(name || "").trim();
+    if (!memberName) throw new Error("請輸入會員姓名。");
+    if (this.data.profiles.some(item => item.role === "member" && String(item.phone || "").replace(/\D/g, "") === normalizedPhone.replace(/\D/g, ""))) throw new Error("此電話已登記會員。");
+    if (normalizedEmail && this.data.profiles.some(item => String(item.email || "").toLowerCase() === normalizedEmail)) throw new Error("此電郵已登記。");
+    const profile = { id: this.id("member"), email: normalizedEmail || null, name: memberName, phone: normalizedPhone, birthday: birthday || null, referral_code: randomCode(memberName), role: "member", active: true, created_by: adminId, created_at: new Date().toISOString() };
     this.data.profiles.push(profile);
-    if (referralCode) {
-      const referrer = this.data.profiles.find(item => item.referral_code === referralCode.trim().toUpperCase());
+    if (referrerId) {
+      const referrer = this.data.profiles.find(item => item.id === referrerId && item.role === "member");
       if (referrer) this.data.referrals.push({ id: this.id("ref"), referrer_id: referrer.id, referred_member_id: profile.id, awarded_at: null });
     }
     this.save();
-    return this.signIn(email);
+    return profile;
   }
 
   async signOut() { this.session = null; }

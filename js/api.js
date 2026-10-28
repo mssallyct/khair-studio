@@ -17,11 +17,8 @@ export class KhairApi {
     this.setSession(session); return session;
   }
 
-  async signUp({ email, password, name, phone, birthday, referralCode }) {
-    if (this.demoMode) return this.demo.signUp({ email, name, phone, birthday, referralCode });
-    const result = await this.authRequest(`/signup`, { email, password, data: { name, phone, birthday: birthday || null, referral_code_entered: referralCode || null } });
-    if (result.access_token) this.setSession(result);
-    return result;
+  async signUp() {
+    throw new Error("此系統不設會員自行註冊。");
   }
 
   async signOut() {
@@ -87,6 +84,17 @@ export class KhairApi {
       this.getCatalog(), this.getStylists()
     ]);
     return { profiles, appointments, sales, stamps, catalog, stylists };
+  }
+
+  async createMember({ name, phone, email, birthday, referrerId, adminId }) {
+    if (this.demoMode) return this.demo.createMember({ name, phone, email, birthday, referrerId, adminId });
+    return this.rpc("create_member", {
+      p_name: name,
+      p_phone: phone,
+      p_email: email || null,
+      p_birthday: birthday || null,
+      p_referrer_id: referrerId || null
+    });
   }
 
   async updateAppointmentStatus(id, status) {
