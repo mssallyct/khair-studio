@@ -85,9 +85,15 @@ export class DemoStore {
       profiles: [...this.data.profiles],
       appointments: [...this.data.appointments].sort(byNewest("start_at")),
       sales: [...this.data.sales].sort(byNewest("completed_at")),
+      saleItems: [...this.data.saleItems],
       stamps: [...this.data.stampLedger].sort(byNewest("created_at")),
+      referrals: [...this.data.referrals],
       catalog: await this.getCatalog(),
-      stylists: await this.getStylists()
+      stylists: await this.getStylists(),
+      settings: [
+        { key: "business_hours", value: { open: "11:00", close: "21:00", days: [1,2,3,4,5,6,0] } },
+        { key: "stamp_rules", value: { threshold: 600, four_stamp_discount: 0.10, eight_stamp_discount: 0.15, product_member_discount: 0.05 } }
+      ]
     };
   }
 

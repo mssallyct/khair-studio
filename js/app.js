@@ -1,5 +1,6 @@
 import { KhairApi } from "./api.js";
 import { APPOINTMENT_LABELS, calculateSale, formatDateTime, formatMoney, generateTimeSlots } from "./rules.js";
+import { downloadAdminWorkbook } from "./excel-export.js";
 
 const api = new KhairApi(window.KHAIR_CONFIG || {});
 const root = document.querySelector("#app");
@@ -93,7 +94,7 @@ function renderApp() {
     <main class="main">
       <header class="topbar">
         <div><p class="eyebrow">${admin ? "K.Hair Admin" : "K.Hair Member"}</p><h1>${viewTitle()}</h1><p class="muted">${todayText()}</p></div>
-        <div class="topbar-actions"><button class="icon-button mobile-menu" data-action="toggle-menu">☰</button><button class="button ghost" data-action="refresh"><span>同步資料</span>↻</button></div>
+        <div class="topbar-actions"><button class="icon-button mobile-menu" data-action="toggle-menu">☰</button><button class="button ghost" data-action="export-data"><span>匯出 Excel</span>↓</button><button class="button ghost" data-action="refresh"><span>同步資料</span>↻</button></div>
       </header>
       ${state.loading ? `<div class="card"><p class="muted">正在載入資料…</p></div>` : admin ? renderAdminView() : renderMemberView()}
     </main>
@@ -340,6 +341,7 @@ root.addEventListener("click", async event => {
   try {
     if (action === "logout") { await api.signOut(); Object.assign(state,{session:null,profile:null,data:null,view:"dashboard"}); render(); }
     if (action === "refresh") await refresh();
+    if (action === "export-data") { const fileName=downloadAdminWorkbook(state.data); toast(`${fileName} 已匯出。`); }
     if (action === "toggle-menu") document.querySelector("#sidebar")?.classList.toggle("open");
     if (action === "close-modal") { state.modal=null; state.saleItems=[]; render(); }
     if (action === "cancel-appointment") { await api.cancelAppointment(target.dataset.id,state.profile.id); toast("預約已取消。"); await refresh(); }

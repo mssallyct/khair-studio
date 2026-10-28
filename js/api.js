@@ -76,14 +76,17 @@ export class KhairApi {
 
   async getAdminDashboard() {
     if (this.demoMode) return this.demo.getAdminDashboard();
-    const [profiles, appointments, sales, stamps, catalog, stylists] = await Promise.all([
+    const [profiles, appointments, sales, saleItems, stamps, referrals, catalog, stylists, settings] = await Promise.all([
       this.rest(`/profiles?order=created_at.desc&select=*`),
       this.rest(`/appointments?order=start_at.desc&select=*`),
       this.rest(`/sales?order=completed_at.desc&select=*`),
+      this.rest(`/sale_items?select=*`),
       this.rest(`/stamp_ledger?order=created_at.desc&select=*`),
-      this.getCatalog(), this.getStylists()
+      this.rest(`/referrals?order=created_at.desc&select=*`),
+      this.getCatalog(), this.getStylists(),
+      this.rest(`/settings?order=key.asc&select=*`)
     ]);
-    return { profiles, appointments, sales, stamps, catalog, stylists };
+    return { profiles, appointments, sales, saleItems, stamps, referrals, catalog, stylists, settings };
   }
 
   async createMember({ name, phone, email, birthday, referrerId, adminId }) {
