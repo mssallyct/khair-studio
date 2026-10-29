@@ -226,7 +226,8 @@ function renderSales() {
 }
 
 function renderSettings() {
-  return `<div class="grid cols-2"><section class="card"><div class="card-head"><h2>服務及產品</h2><button class="button small" data-action="new-catalog-item">＋ 新增項目</button></div><div class="list">${state.data.catalog.map(item => `<div class="list-item"><div class="list-item-main"><strong>${esc(item.name)}</strong><span>${item.kind === "product" ? "髮型產品" : `${item.duration_minutes}分鐘`}</span></div><strong>${formatMoney(item.price)}</strong></div>`).join("")}</div></section>
+  const catalog = activeCatalogItems();
+  return `<div class="grid cols-2"><section class="card"><div class="card-head"><h2>服務及產品</h2><button class="button small" data-action="new-catalog-item">＋ 新增項目</button></div>${catalog.length ? `<div class="list">${catalog.map(item => `<div class="list-item"><div class="list-item-main"><strong>${esc(item.name)}</strong><span>${item.kind === "product" ? "髮型產品" : `${item.duration_minutes}分鐘`}</span></div><div class="list-item-side"><strong>${formatMoney(item.price)}</strong><div class="actions catalog-actions"><button class="button ghost small" data-action="edit-catalog-item" data-id="${esc(item.id)}">修改</button><button class="button ghost small catalog-delete" data-action="delete-catalog-item" data-id="${esc(item.id)}">刪除</button></div></div></div>`).join("")}</div>` : empty("暫時未有服務或產品")}</section>
   <section class="card"><div class="card-head"><h2>髮型師</h2><span class="muted small">星期一至日</span></div><div class="list">${state.data.stylists.map(item => `<div class="list-item"><div class="list-item-main"><strong>${esc(item.name)}</strong><span>11:00–21:00</span></div><span class="badge active">服務中</span></div>`).join("")}</div></section></div>`;
 }
 
@@ -242,6 +243,7 @@ function renderModal() {
   if (state.modal.type === "member") return memberModal();
   if (state.modal.type === "appointment") return appointmentModal();
   if (state.modal.type === "catalog") return catalogModal();
+  if (state.modal.type === "catalog-delete") return catalogDeleteModal();
   if (state.modal.type === "sale") return saleModal();
   if (state.modal.type === "stamps") return stampModal();
   return "";
@@ -249,7 +251,7 @@ function renderModal() {
 
 function appointmentModal() {
   const members = state.data.profiles.filter(item => item.role === "member");
-  const services = state.data.catalog.filter(item => item.kind === "service");
+  const services = activeCatalogItems().filter(item => item.kind === "service");
   const firstService = services[0];
   return `<div class="modal-backdrop"><section class="modal"><div class="modal-head"><div><p class="eyebrow">Admin Appointment</p><h2>新增預約</h2></div><button class="icon-button" data-action="close-modal">×</button></div>
     <form id="appointment-form" class="form-grid">
@@ -266,14 +268,28 @@ function appointmentModal() {
 }
 
 function catalogModal() {
-  return `<div class="modal-backdrop"><section class="modal"><div class="modal-head"><div><p class="eyebrow">Service & Product</p><h2>新增項目</h2></div><button class="icon-button" data-action="close-modal">×</button></div>
+  const item = state.modal.catalogId ? state.data.catalog.find(row => row.id === state.modal.catalogId && row.active !== false) : null;
+  const editing = Boolean(item);
+  const kind = item?.kind || "service";
+  const duration = Number(item?.duration_minutes || 60);
+  return `<div class="modal-backdrop"><section class="modal"><div class="modal-head"><div><p class="eyebrow">Service & Product</p><h2>${editing ? "修改項目" : "新增項目"}</h2></div><button class="icon-button" data-action="close-modal">×</button></div>
     <form id="catalog-form" class="form-grid">
-      <label class="field"><span>類型</span><select name="kind" id="catalog-kind"><option value="service">服務</option><option value="product">產品</option></select></label>
-      <label class="field"><span>名稱</span><input name="name" required maxlength="80" placeholder="例如：挑染"></label>
-      <label class="field"><span>價格（HK$）</span><input name="price" type="number" min="0" step="1" required placeholder="0"></label>
-      <label class="field"><span>所需時間</span><select name="durationMinutes" id="catalog-duration"><option value="30">30分鐘</option><option value="60" selected>60分鐘</option><option value="90">90分鐘</option><option value="120">120分鐘</option><option value="150">150分鐘</option><option value="180">180分鐘</option></select></label>
-      <button class="button primary full span-2" type="submit">新增至項目清單</button>
+      <input type="hidden" name="catalogId" value="${esc(item?.id || "")}">
+      <label class="field"><span>類型</span><select name="kind" id="catalog-kind"><option value="service" ${kind === "service" ? "selected" : ""}>服務</option><option value="product" ${kind === "product" ? "selected" : ""}>產品</option></select></label>
+      <label class="field"><span>名稱</span><input name="name" required maxlength="80" placeholder="例如：挑染" value="${esc(item?.name || "")}"></label>
+      <label class="field"><span>價格（HK$）</span><input name="price" type="number" min="0" step="1" required placeholder="0" value="${esc(item?.price ?? "")}"></label>
+      <label class="field"><span>所需時間</span><select name="durationMinutes" id="catalog-duration" ${kind === "product" ? "disabled" : ""}>${[30,60,90,120,150,180].map(value => `<option value="${value}" ${duration === value ? "selected" : ""}>${value}分鐘</option>`).join("")}</select></label>
+      <button class="button primary full span-2" type="submit">${editing ? "儲存修改" : "新增至項目清單"}</button>
     </form>
+  </section></div>`;
+}
+
+function catalogDeleteModal() {
+  const item = state.data.catalog.find(row => row.id === state.modal.catalogId && row.active !== false);
+  if (!item) return "";
+  return `<div class="modal-backdrop"><section class="modal confirmation-modal"><div class="modal-head"><div><p class="eyebrow">Delete Item</p><h2>刪除「${esc(item.name)}」？</h2></div><button class="icon-button" data-action="close-modal">×</button></div>
+    <p class="muted">刪除後，此項目不會再出現在新預約或新消費選單；過往紀錄仍會保留。</p>
+    <div class="confirmation-actions"><button class="button ghost" type="button" data-action="close-modal">取消</button><button class="button danger" type="button" data-action="confirm-delete-catalog" data-id="${esc(item.id)}">確認刪除</button></div>
   </section></div>`;
 }
 
@@ -297,7 +313,8 @@ function saleModal() {
   const balance = memberBalance(selectedMember);
   if (!state.saleItems.length) {
     const appointment = state.data.appointments.find(item => item.id === state.modal.appointmentId);
-    const initial = state.data.catalog.find(item => item.id === appointment?.service_id) || state.data.catalog[0];
+    const catalog = activeCatalogItems();
+    const initial = catalog.find(item => item.id === appointment?.service_id) || catalog[0];
     if (initial) state.saleItems = [catalogToSaleItem(initial)];
   }
   const summary = calculateSale(state.saleItems, balance, state.modal.redemption || 0);
@@ -401,10 +418,13 @@ root.addEventListener("click", async event => {
     if (action === "new-member") { state.modal={type:"member"}; render(); }
     if (action === "new-appointment") { state.modal={type:"appointment"}; render(); }
     if (action === "new-catalog-item") { state.modal={type:"catalog"}; render(); }
+    if (action === "edit-catalog-item") { state.modal={type:"catalog",catalogId:target.dataset.id}; render(); }
+    if (action === "delete-catalog-item") { state.modal={type:"catalog-delete",catalogId:target.dataset.id}; render(); }
+    if (action === "confirm-delete-catalog") { await api.deleteCatalogItem(target.dataset.id); state.modal=null; toast("項目已刪除，過往紀錄不受影響。"); await refresh(); }
     if (["new-sale","sale-member","sale-from-appointment"].includes(action)) { state.modal={type:"sale",memberId:target.dataset.member||null,appointmentId:target.dataset.id||null,redemption:0}; state.saleItems=[]; render(); }
     if (["adjust-stamps","stamps-member"].includes(action)) { state.modal={type:"stamps",memberId:target.dataset.member||null}; render(); }
     if (action === "add-sale-item") {
-      const first=state.data.catalog[0];
+      const first=activeCatalogItems()[0];
       if (first) {
         const newItem={...catalogToSaleItem(first),justAdded:true};
         state.saleItems.unshift(newItem);
@@ -463,9 +483,10 @@ async function onAdminAppointment(event) {
 async function onCatalogItem(event) {
   event.preventDefault(); const form=Object.fromEntries(new FormData(event.currentTarget));
   await busy(event.submitter, async()=>{
-    await api.createCatalogItem({...form,durationMinutes:form.kind === "product" ? 0 : Number(form.durationMinutes)});
+    const input={...form,durationMinutes:form.kind === "product" ? 0 : Number(form.durationMinutes)};
+    if (form.catalogId) await api.updateCatalogItem(form.catalogId,input); else await api.createCatalogItem(input);
     state.modal=null;
-    toast("新項目已加入清單。");
+    toast(form.catalogId ? "項目修改已儲存。" : "新項目已加入清單。");
     await refresh();
   });
 }
@@ -519,11 +540,13 @@ function updateSaleItem(event) {
 
 function catalogToSaleItem(item){return {catalogId:item.id,kind:item.kind,name:item.name,quantity:1,unitPrice:Number(item.price)||0};}
 function catalogOptions(selectedId){
-  const services=state.data.catalog.filter(item=>item.kind==="service");
-  const products=state.data.catalog.filter(item=>item.kind==="product");
+  const services=activeCatalogItems().filter(item=>item.kind==="service");
+  const products=activeCatalogItems().filter(item=>item.kind==="product");
   const options=items=>items.map(item=>`<option value="${item.id}" ${item.id===selectedId?"selected":""}>${esc(item.name)} · ${formatMoney(item.price)}</option>`).join("");
   return `${services.length?`<optgroup label="服務">${options(services)}</optgroup>`:""}${products.length?`<optgroup label="產品">${options(products)}</optgroup>`:""}`;
 }
+
+function activeCatalogItems() { return (state.data.catalog || []).filter(item => item.active !== false); }
 
 function filterMembers(event) {
   const query=event.target.value.trim().toLowerCase();

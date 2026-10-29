@@ -74,6 +74,18 @@ export class KhairApi {
     return rows[0];
   }
 
+  async updateCatalogItem(id, { name, kind, price, durationMinutes }) {
+    if (this.demoMode) return this.demo.updateCatalogItem(id, { name, kind, price, durationMinutes });
+    const rows = await this.rest(`/catalog?id=eq.${encodeURIComponent(id)}`, { method: "PATCH", body: { name: String(name || "").trim(), kind: kind === "product" ? "product" : "service", price: Number(price), duration_minutes: kind === "product" ? 0 : Number(durationMinutes) }, prefer: "return=representation" });
+    return rows[0];
+  }
+
+  async deleteCatalogItem(id) {
+    if (this.demoMode) return this.demo.deleteCatalogItem(id);
+    const rows = await this.rest(`/catalog?id=eq.${encodeURIComponent(id)}`, { method: "PATCH", body: { active: false }, prefer: "return=representation" });
+    return rows[0];
+  }
+
   async cancelAppointment(id, memberId) {
     if (this.demoMode) return this.demo.cancelAppointment(id, memberId);
     const rows = await this.rest(`/appointments?id=eq.${id}&member_id=eq.${memberId}`, { method: "PATCH", body: { status: "cancelled" }, prefer: "return=representation" });
@@ -89,7 +101,7 @@ export class KhairApi {
       this.rest(`/sale_items?select=*`),
       this.rest(`/stamp_ledger?order=created_at.desc&select=*`),
       this.rest(`/referrals?order=created_at.desc&select=*`),
-      this.getCatalog(), this.getStylists(),
+      this.rest(`/catalog?order=sort_order.asc&select=*`), this.getStylists(),
       this.rest(`/settings?order=key.asc&select=*`)
     ]);
     return { profiles, appointments, sales, saleItems, stamps, referrals, auditLog: [], catalog, stylists, settings };

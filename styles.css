@@ -160,6 +160,8 @@ a { color: inherit; }
 .list-item-main strong, .list-item-main span { display: block; }
 .list-item-main span { margin-top: 4px; color: #6f7772; font-size: .8rem; }
 .list-item-side { flex-shrink: 0; text-align: right; }
+.catalog-actions { margin-top: 8px; justify-content: flex-end; }
+.catalog-delete { color: var(--red); border-color: #dfc1bd; }
 .empty { padding: 34px 18px; border: 1px dashed #d7d2c9; border-radius: 16px; color: #7a817c; text-align: center; }
 
 .badge { display: inline-flex; align-items: center; border-radius: 999px; padding: 5px 9px; font-size: .7rem; font-weight: 700; }
@@ -186,6 +188,8 @@ td { font-size: .86rem; }
 .modal.wide { width: min(100%, 880px); }
 .modal-head { margin-bottom: 22px; display: flex; justify-content: space-between; align-items: center; }
 .modal-head h2 { margin: 0; }
+.confirmation-modal { width: min(100%, 520px); }
+.confirmation-actions { margin-top: 24px; display: flex; justify-content: flex-end; gap: 10px; }
 .icon-button { width: 36px; height: 36px; border: 0; border-radius: 50%; display: grid; place-items: center; color: var(--ink); background: var(--sand); }
 .sale-summary { margin: 12px 0 20px; padding: 16px; border-radius: 15px; background: #f0eadf; }
 .sale-summary > div { display: flex; justify-content: space-between; padding: 5px 0; }

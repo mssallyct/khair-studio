@@ -100,6 +100,24 @@ test("管理員可新增服務項目及已確認預約", async () => {
   await assert.rejects(() => store.createCatalogItem({ name: "新護理療程", kind: "service", price: 700, durationMinutes: 60 }), /已存在/);
 });
 
+test("服務及產品可修改及安全刪除並保留歷史資料", async () => {
+  localStorage.clear();
+  const store = await createAuthenticatedStore();
+  const item = await store.createCatalogItem({ name: "可修改護理", kind: "service", price: 500, durationMinutes: 60 });
+  const updated = await store.updateCatalogItem(item.id, { name: "升級護理", kind: "service", price: 680, durationMinutes: 90 });
+  assert.equal(updated.name, "升級護理");
+  assert.equal(updated.price, 680);
+  assert.equal(updated.duration_minutes, 90);
+  assert.equal(store.data.auditLog.at(-1).action, "catalog.updated");
+
+  const deleted = await store.deleteCatalogItem(item.id);
+  assert.equal(deleted.active, false);
+  assert.equal((await store.getCatalog()).some(row => row.id === item.id), false);
+  assert.equal(store.data.catalog.find(row => row.id === item.id)?.name, "升級護理");
+  assert.equal(store.data.auditLog.at(-1).action, "catalog.deleted");
+  assert.equal(store.data.auditLog.at(-1).actor_username, "tester");
+});
+
 test("所有主要資料更新均記錄登入管理員", async () => {
   localStorage.clear();
   const store = await createAuthenticatedStore();

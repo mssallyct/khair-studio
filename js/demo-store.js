@@ -118,7 +118,7 @@ export class DemoStore {
   async signOut() { this.session = null; }
   async getSession() { return this.session; }
   async getProfile() { return this.data.profiles.find(item => item.id === this.session?.user?.id) || null; }
-  async getCatalog() { return this.data.catalog.filter(item => item.active); }
+  async getCatalog() { return this.data.catalog.filter(item => item.active !== false); }
   async getStylists() { return this.data.stylists.filter(item => item.active); }
   stampBalance(memberId) { return this.data.stampLedger.filter(item => item.member_id === memberId).reduce((sum, item) => sum + item.delta, 0); }
 
@@ -132,7 +132,7 @@ export class DemoStore {
   async createAppointment({ memberId, stylistId, serviceId, date, time, note, status = "pending" }) {
     const actor = this.actor();
     const member = this.data.profiles.find(item => item.id === memberId && item.role === "member" && item.active);
-    const service = this.data.catalog.find(item => item.id === serviceId);
+    const service = this.data.catalog.find(item => item.id === serviceId && item.active !== false);
     const stylist = this.data.stylists.find(item => item.id === stylistId && item.active);
     if (!member) throw new Error("請選擇有效會員。");
     if (!service || service.kind !== "service") throw new Error("請選擇有效服務。");
@@ -150,8 +150,7 @@ export class DemoStore {
     this.save(); return item;
   }
 
-  async createCatalogItem({ name, kind, price, durationMinutes }) {
-    const actor = this.actor();
+  catalogFields({ name, kind, price, durationMinutes }, excludeId = null) {
     const itemName = String(name || "").trim();
     const itemKind = kind === "product" ? "product" : "service";
     const itemPrice = Number(price);
@@ -159,11 +158,38 @@ export class DemoStore {
     if (!itemName) throw new Error("請輸入項目名稱。");
     if (!Number.isFinite(itemPrice) || itemPrice < 0) throw new Error("請輸入有效價格。");
     if (itemKind === "service" && (!Number.isInteger(duration) || duration < 30 || duration % 30 !== 0)) throw new Error("服務時間必須以30分鐘為單位。");
-    if (this.data.catalog.some(item => item.name.trim().toLowerCase() === itemName.toLowerCase())) throw new Error("此項目名稱已存在。");
-    const row = { id: this.id("catalog"), name: itemName, kind: itemKind, price: itemPrice, duration_minutes: duration, active: true, sort_order: Math.max(0, ...this.data.catalog.map(item => Number(item.sort_order) || 0)) + 10, created_by: actor.id, created_at: new Date().toISOString() };
+    if (this.data.catalog.some(item => item.id !== excludeId && item.active !== false && item.name.trim().toLowerCase() === itemName.toLowerCase())) throw new Error("此項目名稱已存在。");
+    return { name: itemName, kind: itemKind, price: itemPrice, duration_minutes: duration };
+  }
+
+  async createCatalogItem(input) {
+    const actor = this.actor();
+    const fields = this.catalogFields(input);
+    const row = { id: this.id("catalog"), ...fields, active: true, sort_order: Math.max(0, ...this.data.catalog.map(item => Number(item.sort_order) || 0)) + 10, created_by: actor.id, created_at: new Date().toISOString() };
     this.data.catalog.push(row);
-    this.audit({ action: "catalog.created", label: "新增項目", targetType: itemKind === "product" ? "產品" : "服務", targetId: row.id, summary: `${row.name} · HK$${row.price}` });
+    this.audit({ action: "catalog.created", label: "新增項目", targetType: row.kind === "product" ? "產品" : "服務", targetId: row.id, summary: `${row.name} · HK$${row.price}` });
     this.save(); return row;
+  }
+
+  async updateCatalogItem(id, input) {
+    const actor = this.actor();
+    const item = this.data.catalog.find(row => row.id === id && row.active !== false);
+    if (!item) throw new Error("找不到服務或產品項目。");
+    const before = `${item.name} · HK$${item.price}`;
+    Object.assign(item, this.catalogFields(input, id), { updated_by: actor.id, updated_at: new Date().toISOString() });
+    this.audit({ action: "catalog.updated", label: "修改項目", targetType: item.kind === "product" ? "產品" : "服務", targetId: item.id, summary: `${before} → ${item.name} · HK$${item.price}` });
+    this.save(); return item;
+  }
+
+  async deleteCatalogItem(id) {
+    const actor = this.actor();
+    const item = this.data.catalog.find(row => row.id === id && row.active !== false);
+    if (!item) throw new Error("找不到服務或產品項目。");
+    item.active = false;
+    item.deleted_by = actor.id;
+    item.deleted_at = new Date().toISOString();
+    this.audit({ action: "catalog.deleted", label: "刪除項目", targetType: item.kind === "product" ? "產品" : "服務", targetId: item.id, summary: `${item.name} · HK$${item.price}` });
+    this.save(); return item;
   }
 
   async cancelAppointment(id, memberId) {
@@ -184,7 +210,7 @@ export class DemoStore {
       stamps: [...this.data.stampLedger].sort(byNewest("created_at")),
       referrals: [...this.data.referrals],
       auditLog: [...this.data.auditLog].sort(byNewest("created_at")),
-      catalog: await this.getCatalog(),
+      catalog: [...this.data.catalog].sort((a,b) => Number(a.sort_order || 0) - Number(b.sort_order || 0)),
       stylists: await this.getStylists(),
       settings: [
         { key: "business_hours", value: { open: "11:00", close: "21:00", days: [1,2,3,4,5,6,0] } },
@@ -283,7 +309,12 @@ function migrateData(data, accounts) {
       if (item.created_by === "admin-1") item.created_by = replacementId;
       if (item.updated_by === "admin-1") item.updated_by = replacementId;
     }
-    for (const item of data.catalog || []) if (item.created_by === "admin-1") item.created_by = replacementId;
+    for (const item of data.catalog || []) {
+      if (item.active === undefined) item.active = true;
+      if (item.created_by === "admin-1") item.created_by = replacementId;
+      if (item.updated_by === "admin-1") item.updated_by = replacementId;
+      if (item.deleted_by === "admin-1") item.deleted_by = replacementId;
+    }
     for (const item of data.sales || []) if (item.completed_by === "admin-1") item.completed_by = replacementId;
     for (const item of data.stampLedger) if (item.created_by === "admin-1") item.created_by = replacementId;
     for (const item of data.auditLog) if (item.actor_id === "admin-1") item.actor_id = replacementId;
