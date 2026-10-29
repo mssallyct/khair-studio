@@ -15,27 +15,33 @@ globalThis.localStorage = new MemoryStorage();
 if (!globalThis.crypto) globalThis.crypto = webcrypto;
 
 const TEST_PASSWORD = "safe-test-password";
+const SECOND_PASSWORD = "second-test-password";
 const TEST_ACCOUNTS = {
   tester: {
     profileId: "admin-tester",
     name: "Test Admin"
+  },
+  second: {
+    profileId: "admin-second",
+    name: "Second Admin"
   }
 };
 
 function createStore() { return new DemoStore({ accounts: TEST_ACCOUNTS, credentialIterations: 1000 }); }
 async function createAuthenticatedStore() {
   const store = createStore();
-  await store.setupCredentials({ tester: TEST_PASSWORD });
   await store.signIn("tester", TEST_PASSWORD);
   return store;
 }
 
-test("只有正確的管理員登入名稱及密碼可以登入", async () => {
+test("兩個管理員可以在同一登入頁獨立登入", async () => {
   localStorage.clear();
   const store = createStore();
-  assert.equal(store.needsCredentialSetup(), true);
-  await store.setupCredentials({ tester: TEST_PASSWORD });
-  assert.equal(store.needsCredentialSetup(), false);
+  await assert.doesNotReject(() => store.signIn("tester", TEST_PASSWORD));
+  await store.signOut();
+  await assert.doesNotReject(() => store.signIn("second", SECOND_PASSWORD));
+  assert.equal(store.session.user.username, "second");
+  await store.signOut();
   await assert.doesNotReject(() => store.signIn("tester", TEST_PASSWORD));
   await assert.rejects(() => store.signIn("tester", "wrong-password"), /登入名稱或密碼不正確/);
   await assert.rejects(() => store.signIn("unknown", TEST_PASSWORD), /登入名稱或密碼不正確/);

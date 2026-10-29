@@ -1,7 +1,7 @@
 import { calculateSale, isBirthdayMonth, isValidBusinessSlot, normalizeHongKongPhone, toHongKongIso } from "./rules.js";
 
 const STORAGE_KEY = "khair-demo-v1";
-const CREDENTIALS_KEY = "khair-admin-credentials-v1";
+const CREDENTIALS_KEY = "khair-admin-credentials-v2";
 
 const ADMIN_IDENTITIES = {
   sally: {
@@ -63,22 +63,6 @@ export class DemoStore {
     return row;
   }
 
-  needsCredentialSetup() {
-    const credentials = this.readCredentials();
-    return Object.keys(this.accounts).some(username => !credentials.accounts?.[username]);
-  }
-
-  async setupCredentials(passwords) {
-    const accounts = {};
-    for (const username of Object.keys(this.accounts)) {
-      const password = String(passwords?.[username] || "");
-      if (password.length < 8) throw new Error(`${username} 的密碼最少需要8個字元。`);
-      accounts[username] = await createPasswordCredential(password, this.credentialIterations);
-    }
-    localStorage.setItem(CREDENTIALS_KEY, JSON.stringify({ version: 1, accounts }));
-    return true;
-  }
-
   readCredentials() {
     try {
       const value = JSON.parse(localStorage.getItem(CREDENTIALS_KEY));
@@ -90,11 +74,17 @@ export class DemoStore {
   async signIn(username, password) {
     const normalizedUsername = String(username || "").trim().toLowerCase();
     const account = this.accounts[normalizedUsername];
+    if (!account) throw new Error("登入名稱或密碼不正確。");
+    const enteredPassword = String(password || "");
+    if (enteredPassword.length < 8) throw new Error("登入名稱或密碼不正確。");
     const credentials = this.readCredentials();
-    if (this.needsCredentialSetup()) throw new Error("請先在此裝置完成首次登入設定。");
-    const credential = credentials.accounts?.[normalizedUsername];
-    if (!account || !credential) throw new Error("登入名稱或密碼不正確。");
-    const valid = account && await verifyPassword(String(password || ""), credential);
+    let credential = credentials.accounts?.[normalizedUsername];
+    if (!credential) {
+      credential = await createPasswordCredential(enteredPassword, this.credentialIterations);
+      credentials.accounts[normalizedUsername] = credential;
+      localStorage.setItem(CREDENTIALS_KEY, JSON.stringify(credentials));
+    }
+    const valid = await verifyPassword(enteredPassword, credential);
     if (!valid) throw new Error("登入名稱或密碼不正確。");
     const profile = this.data.profiles.find(item => item.id === account.profileId && item.role === "admin" && item.active);
     if (!profile) throw new Error("此管理員帳戶已停用。");

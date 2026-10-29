@@ -12,7 +12,6 @@ const state = {
   data: null,
   view: "dashboard",
   loading: false,
-  needsSetup: false,
   modal: null,
   saleItems: []
 };
@@ -21,7 +20,6 @@ boot();
 
 async function boot() {
   if ("serviceWorker" in navigator) navigator.serviceWorker.register("./sw.js").catch(() => null);
-  state.needsSetup = await api.needsCredentialSetup();
   state.session = await api.getSession();
   if (state.session) {
     state.profile = await api.getProfile();
@@ -63,23 +61,13 @@ function renderAuth() {
       <section class="auth-panel">
         <div class="auth-card">
           <p class="eyebrow">K.Hair Studio · Hong Kong</p>
-          ${state.needsSetup ? credentialSetupForm() : `<h2>管理員登入</h2><p class="muted">只供獲授權的 K.Hair Studio 管理員使用。會員由管理員在系統內新增，不設自行註冊。</p>${loginForm()}${api.demoMode ? `<div class="demo-note"><strong>管理員專用</strong><br>每次資料更新都會記錄登入者及時間。</div>` : ""}`}
+          <h2>管理員登入</h2>
+          <p class="muted">只供獲授權的 K.Hair Studio 管理員使用。會員由管理員在系統內新增，不設自行註冊。</p>
+          ${loginForm()}
+          ${api.demoMode ? `<div class="demo-note"><strong>管理員專用</strong><br>每次資料更新都會記錄登入者及時間。</div>` : ""}
         </div>
       </section>
     </main>`;
-}
-
-function credentialSetupForm() {
-  return `<h2>首次登入設定</h2>
-    <p class="muted">只需在此裝置設定一次。密碼資料只會保存在目前瀏覽器，不會上載 GitHub。</p>
-    <form id="credential-setup-form">
-      <label class="field"><span>Sally 密碼</span><input name="sallyPassword" type="password" autocomplete="new-password" required minlength="8"></label>
-      <label class="field"><span>再次輸入 Sally 密碼</span><input name="sallyConfirm" type="password" autocomplete="new-password" required minlength="8"></label>
-      <label class="field"><span>Howood 密碼</span><input name="howoodPassword" type="password" autocomplete="new-password" required minlength="8"></label>
-      <label class="field"><span>再次輸入 Howood 密碼</span><input name="howoodConfirm" type="password" autocomplete="new-password" required minlength="8"></label>
-      <button class="button primary full" type="submit">儲存兩個管理員登入</button>
-    </form>
-    <div class="demo-note"><strong>登入名稱</strong><br>sally<br>howood</div>`;
 }
 
 function loginForm() {
@@ -377,7 +365,6 @@ function stampLedgerList(items, admin = false) {
 }
 
 function bindForms() {
-  root.querySelector("#credential-setup-form")?.addEventListener("submit", onCredentialSetup);
   root.querySelector("#login-form")?.addEventListener("submit", onLogin);
   root.querySelector("#member-form")?.addEventListener("submit", onMember);
   root.querySelector("#appointment-form")?.addEventListener("submit", onAdminAppointment);
@@ -418,19 +405,6 @@ root.addEventListener("click", async event => {
     if (action === "remove-sale-item") { state.saleItems.splice(Number(target.dataset.index),1); render(); }
   } catch (error) { toast(error.message,true); }
 });
-
-async function onCredentialSetup(event) {
-  event.preventDefault();
-  const form = Object.fromEntries(new FormData(event.currentTarget));
-  if (form.sallyPassword !== form.sallyConfirm) { toast("Sally 兩次輸入的密碼不相同。", true); return; }
-  if (form.howoodPassword !== form.howoodConfirm) { toast("Howood 兩次輸入的密碼不相同。", true); return; }
-  await busy(event.submitter, async () => {
-    await api.setupAdminCredentials({ sally: form.sallyPassword, howood: form.howoodPassword });
-    state.needsSetup = false;
-    render();
-    toast("兩個管理員登入已儲存在此裝置。");
-  });
-}
 
 async function onLogin(event) {
   event.preventDefault(); const form = new FormData(event.currentTarget);

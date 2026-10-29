@@ -11,15 +11,6 @@ export class KhairApi {
     this.session = this.demoMode ? null : loadStoredSession();
   }
 
-  async needsCredentialSetup() {
-    return this.demoMode ? this.demo.needsCredentialSetup() : false;
-  }
-
-  async setupAdminCredentials(passwords) {
-    if (!this.demoMode) throw new Error("中央登入模式不使用裝置密碼設定。");
-    return this.demo.setupCredentials(passwords);
-  }
-
   async signIn(username, password) {
     if (this.demoMode) return this.demo.signIn(username, password);
     const session = await this.authRequest(`/token?grant_type=password`, { email: username, password });
