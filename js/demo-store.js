@@ -119,7 +119,7 @@ export class DemoStore {
   async getSession() { return this.session; }
   async getProfile() { return this.data.profiles.find(item => item.id === this.session?.user?.id) || null; }
   async getCatalog() { return this.data.catalog.filter(item => item.active !== false); }
-  async getStylists() { return this.data.stylists.filter(item => item.active); }
+  async getStylists() { return this.data.stylists.filter(item => item.active !== false); }
   stampBalance(memberId) { return this.data.stampLedger.filter(item => item.member_id === memberId).reduce((sum, item) => sum + item.delta, 0); }
 
   async getMemberDashboard(memberId) {
@@ -192,6 +192,28 @@ export class DemoStore {
     this.save(); return item;
   }
 
+  async createStylist(name) {
+    const actor = this.actor();
+    const stylistName = String(name || "").trim();
+    if (!stylistName) throw new Error("請輸入髮型師名稱。");
+    if (this.data.stylists.some(item => item.active !== false && item.name.trim().toLowerCase() === stylistName.toLowerCase())) throw new Error("此髮型師名稱已存在。");
+    const row = { id: this.id("stylist"), name: stylistName, active: true, created_by: actor.id, created_at: new Date().toISOString() };
+    this.data.stylists.push(row);
+    this.audit({ action: "stylist.created", label: "新增髮型師", targetType: "髮型師", targetId: row.id, summary: row.name });
+    this.save(); return row;
+  }
+
+  async deleteStylist(id) {
+    const actor = this.actor();
+    const item = this.data.stylists.find(row => row.id === id && row.active !== false);
+    if (!item) throw new Error("找不到髮型師。");
+    item.active = false;
+    item.deleted_by = actor.id;
+    item.deleted_at = new Date().toISOString();
+    this.audit({ action: "stylist.deleted", label: "刪除髮型師", targetType: "髮型師", targetId: item.id, summary: item.name });
+    this.save(); return item;
+  }
+
   async cancelAppointment(id, memberId) {
     const actor = this.actor();
     const item = this.data.appointments.find(a => a.id === id && a.member_id === memberId);
@@ -211,7 +233,7 @@ export class DemoStore {
       referrals: [...this.data.referrals],
       auditLog: [...this.data.auditLog].sort(byNewest("created_at")),
       catalog: [...this.data.catalog].sort((a,b) => Number(a.sort_order || 0) - Number(b.sort_order || 0)),
-      stylists: await this.getStylists(),
+      stylists: [...this.data.stylists].sort((a,b) => a.name.localeCompare(b.name, "zh-HK")),
       settings: [
         { key: "business_hours", value: { open: "11:00", close: "21:00", days: [1,2,3,4,5,6,0] } },
         { key: "stamp_rules", value: { threshold: 600, four_stamp_discount: 0.10, eight_stamp_discount: 0.15, product_member_discount: 0.05 } }
@@ -313,6 +335,11 @@ function migrateData(data, accounts) {
       if (item.active === undefined) item.active = true;
       if (item.created_by === "admin-1") item.created_by = replacementId;
       if (item.updated_by === "admin-1") item.updated_by = replacementId;
+      if (item.deleted_by === "admin-1") item.deleted_by = replacementId;
+    }
+    for (const item of data.stylists || []) {
+      if (item.active === undefined) item.active = true;
+      if (item.created_by === "admin-1") item.created_by = replacementId;
       if (item.deleted_by === "admin-1") item.deleted_by = replacementId;
     }
     for (const item of data.sales || []) if (item.completed_by === "admin-1") item.completed_by = replacementId;

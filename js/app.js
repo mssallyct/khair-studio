@@ -227,8 +227,9 @@ function renderSales() {
 
 function renderSettings() {
   const catalog = activeCatalogItems();
+  const stylists = activeStylistItems();
   return `<div class="grid cols-2"><section class="card"><div class="card-head"><h2>服務及產品</h2><button class="button small" data-action="new-catalog-item">＋ 新增項目</button></div>${catalog.length ? `<div class="list">${catalog.map(item => `<div class="list-item"><div class="list-item-main"><strong>${esc(item.name)}</strong><span>${item.kind === "product" ? "髮型產品" : `${item.duration_minutes}分鐘`}</span></div><div class="list-item-side"><strong>${formatMoney(item.price)}</strong><div class="actions catalog-actions"><button class="button ghost small" data-action="edit-catalog-item" data-id="${esc(item.id)}">修改</button><button class="button ghost small catalog-delete" data-action="delete-catalog-item" data-id="${esc(item.id)}">刪除</button></div></div></div>`).join("")}</div>` : empty("暫時未有服務或產品")}</section>
-  <section class="card"><div class="card-head"><h2>髮型師</h2><span class="muted small">星期一至日</span></div><div class="list">${state.data.stylists.map(item => `<div class="list-item"><div class="list-item-main"><strong>${esc(item.name)}</strong><span>11:00–21:00</span></div><span class="badge active">服務中</span></div>`).join("")}</div></section></div>`;
+  <section class="card"><div class="card-head"><div><h2>髮型師</h2><span class="muted small">星期一至日 11:00–21:00</span></div><button class="button small" data-action="new-stylist">＋ 新增髮型師</button></div>${stylists.length ? `<div class="list">${stylists.map(item => `<div class="list-item"><div class="list-item-main"><strong>${esc(item.name)}</strong><span>服務中</span></div><div class="list-item-side"><span class="badge active">服務中</span><div class="actions catalog-actions"><button class="button ghost small catalog-delete" data-action="delete-stylist" data-id="${esc(item.id)}">刪除</button></div></div></div>`).join("")}</div>` : empty("暫時未有髮型師")}</section></div>`;
 }
 
 function renderAuditLog() {
@@ -244,6 +245,8 @@ function renderModal() {
   if (state.modal.type === "appointment") return appointmentModal();
   if (state.modal.type === "catalog") return catalogModal();
   if (state.modal.type === "catalog-delete") return catalogDeleteModal();
+  if (state.modal.type === "stylist") return stylistModal();
+  if (state.modal.type === "stylist-delete") return stylistDeleteModal();
   if (state.modal.type === "sale") return saleModal();
   if (state.modal.type === "stamps") return stampModal();
   return "";
@@ -257,7 +260,7 @@ function appointmentModal() {
     <form id="appointment-form" class="form-grid">
       ${memberPhoneLookup({ name: "memberId", inputId: "appointment-member-phone", label: "會員（輸入電話搜尋）", required: true })}
       <label class="field"><span>服務</span><select name="serviceId" id="appointment-service" required>${services.map(item => `<option value="${item.id}" data-duration="${item.duration_minutes}">${esc(item.name)} · ${formatMoney(item.price)}</option>`).join("")}</select></label>
-      <label class="field"><span>髮型師</span><select name="stylistId" required>${state.data.stylists.map(item => `<option value="${item.id}">${esc(item.name)}</option>`).join("")}</select></label>
+      <label class="field"><span>髮型師</span><select name="stylistId" required>${activeStylistItems().map(item => `<option value="${item.id}">${esc(item.name)}</option>`).join("")}</select></label>
       <label class="field"><span>日期</span><input name="date" type="date" required min="${localDate(new Date())}"></label>
       <label class="field"><span>開始時間</span><select name="time" id="appointment-time" required>${generateTimeSlots(firstService?.duration_minutes).map(time => `<option>${time}</option>`).join("")}</select></label>
       <label class="field"><span>狀態</span><select name="status"><option value="confirmed">已確認</option><option value="pending">待確認</option></select></label>
@@ -290,6 +293,24 @@ function catalogDeleteModal() {
   return `<div class="modal-backdrop"><section class="modal confirmation-modal"><div class="modal-head"><div><p class="eyebrow">Delete Item</p><h2>刪除「${esc(item.name)}」？</h2></div><button class="icon-button" data-action="close-modal">×</button></div>
     <p class="muted">刪除後，此項目不會再出現在新預約或新消費選單；過往紀錄仍會保留。</p>
     <div class="confirmation-actions"><button class="button ghost" type="button" data-action="close-modal">取消</button><button class="button danger" type="button" data-action="confirm-delete-catalog" data-id="${esc(item.id)}">確認刪除</button></div>
+  </section></div>`;
+}
+
+function stylistModal() {
+  return `<div class="modal-backdrop"><section class="modal confirmation-modal"><div class="modal-head"><div><p class="eyebrow">Hair Stylist</p><h2>新增髮型師</h2></div><button class="icon-button" data-action="close-modal">×</button></div>
+    <form id="stylist-form">
+      <label class="field"><span>髮型師名稱</span><input name="name" required maxlength="80" autocomplete="off" placeholder="例如：Stylist May"></label>
+      <button class="button primary full" type="submit">加入髮型師名單</button>
+    </form>
+  </section></div>`;
+}
+
+function stylistDeleteModal() {
+  const item = state.data.stylists.find(row => row.id === state.modal.stylistId && row.active !== false);
+  if (!item) return "";
+  return `<div class="modal-backdrop"><section class="modal confirmation-modal"><div class="modal-head"><div><p class="eyebrow">Remove Stylist</p><h2>刪除「${esc(item.name)}」？</h2></div><button class="icon-button" data-action="close-modal">×</button></div>
+    <p class="muted">刪除後，此髮型師不會再出現在新預約選單；過往預約仍會保留其名稱。</p>
+    <div class="confirmation-actions"><button class="button ghost" type="button" data-action="close-modal">取消</button><button class="button danger" type="button" data-action="confirm-delete-stylist" data-id="${esc(item.id)}">確認刪除</button></div>
   </section></div>`;
 }
 
@@ -385,6 +406,7 @@ function bindForms() {
   root.querySelector("#member-form")?.addEventListener("submit", onMember);
   root.querySelector("#appointment-form")?.addEventListener("submit", onAdminAppointment);
   root.querySelector("#catalog-form")?.addEventListener("submit", onCatalogItem);
+  root.querySelector("#stylist-form")?.addEventListener("submit", onStylist);
   root.querySelector("#booking-form")?.addEventListener("submit", onBooking);
   root.querySelector("#sale-form")?.addEventListener("submit", onSale);
   root.querySelector("#stamp-form")?.addEventListener("submit", onStampAdjustment);
@@ -421,6 +443,9 @@ root.addEventListener("click", async event => {
     if (action === "edit-catalog-item") { state.modal={type:"catalog",catalogId:target.dataset.id}; render(); }
     if (action === "delete-catalog-item") { state.modal={type:"catalog-delete",catalogId:target.dataset.id}; render(); }
     if (action === "confirm-delete-catalog") { await api.deleteCatalogItem(target.dataset.id); state.modal=null; toast("項目已刪除，過往紀錄不受影響。"); await refresh(); }
+    if (action === "new-stylist") { state.modal={type:"stylist"}; render(); }
+    if (action === "delete-stylist") { state.modal={type:"stylist-delete",stylistId:target.dataset.id}; render(); }
+    if (action === "confirm-delete-stylist") { await api.deleteStylist(target.dataset.id); state.modal=null; toast("髮型師已從新預約選單移除。"); await refresh(); }
     if (["new-sale","sale-member","sale-from-appointment"].includes(action)) { state.modal={type:"sale",memberId:target.dataset.member||null,appointmentId:target.dataset.id||null,redemption:0}; state.saleItems=[]; render(); }
     if (["adjust-stamps","stamps-member"].includes(action)) { state.modal={type:"stamps",memberId:target.dataset.member||null}; render(); }
     if (action === "add-sale-item") {
@@ -491,6 +516,16 @@ async function onCatalogItem(event) {
   });
 }
 
+async function onStylist(event) {
+  event.preventDefault(); const form=Object.fromEntries(new FormData(event.currentTarget));
+  await busy(event.submitter, async()=>{
+    await api.createStylist(form.name);
+    state.modal=null;
+    toast("新髮型師已加入名單。");
+    await refresh();
+  });
+}
+
 async function onBooking(event) {
   event.preventDefault(); const form=Object.fromEntries(new FormData(event.currentTarget));
   await busy(event.submitter, async()=>{ await api.createAppointment({...form,memberId:state.profile.id}); toast("預約已提交，待管理員確認。"); state.view="appointments"; await refresh(); });
@@ -547,6 +582,7 @@ function catalogOptions(selectedId){
 }
 
 function activeCatalogItems() { return (state.data.catalog || []).filter(item => item.active !== false); }
+function activeStylistItems() { return (state.data.stylists || []).filter(item => item.active !== false); }
 
 function filterMembers(event) {
   const query=event.target.value.trim().toLowerCase();

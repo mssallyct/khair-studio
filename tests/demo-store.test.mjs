@@ -118,6 +118,22 @@ test("服務及產品可修改及安全刪除並保留歷史資料", async () =>
   assert.equal(store.data.auditLog.at(-1).actor_username, "tester");
 });
 
+test("髮型師可新增及安全刪除並保留歷史資料", async () => {
+  localStorage.clear();
+  const store = await createAuthenticatedStore();
+  const stylist = await store.createStylist("Stylist May");
+  assert.equal(stylist.name, "Stylist May");
+  assert.equal(store.data.auditLog.at(-1).action, "stylist.created");
+  assert.equal((await store.getStylists()).some(item => item.id === stylist.id), true);
+
+  const deleted = await store.deleteStylist(stylist.id);
+  assert.equal(deleted.active, false);
+  assert.equal((await store.getStylists()).some(item => item.id === stylist.id), false);
+  assert.equal(store.data.stylists.find(item => item.id === stylist.id)?.name, "Stylist May");
+  assert.equal(store.data.auditLog.at(-1).action, "stylist.deleted");
+  assert.equal(store.data.auditLog.at(-1).actor_username, "tester");
+});
+
 test("所有主要資料更新均記錄登入管理員", async () => {
   localStorage.clear();
   const store = await createAuthenticatedStore();

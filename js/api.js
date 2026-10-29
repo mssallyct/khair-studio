@@ -86,6 +86,18 @@ export class KhairApi {
     return rows[0];
   }
 
+  async createStylist(name) {
+    if (this.demoMode) return this.demo.createStylist(name);
+    const rows = await this.rest(`/stylists`, { method: "POST", body: { name: String(name || "").trim(), active: true }, prefer: "return=representation" });
+    return rows[0];
+  }
+
+  async deleteStylist(id) {
+    if (this.demoMode) return this.demo.deleteStylist(id);
+    const rows = await this.rest(`/stylists?id=eq.${encodeURIComponent(id)}`, { method: "PATCH", body: { active: false }, prefer: "return=representation" });
+    return rows[0];
+  }
+
   async cancelAppointment(id, memberId) {
     if (this.demoMode) return this.demo.cancelAppointment(id, memberId);
     const rows = await this.rest(`/appointments?id=eq.${id}&member_id=eq.${memberId}`, { method: "PATCH", body: { status: "cancelled" }, prefer: "return=representation" });
@@ -101,7 +113,7 @@ export class KhairApi {
       this.rest(`/sale_items?select=*`),
       this.rest(`/stamp_ledger?order=created_at.desc&select=*`),
       this.rest(`/referrals?order=created_at.desc&select=*`),
-      this.rest(`/catalog?order=sort_order.asc&select=*`), this.getStylists(),
+      this.rest(`/catalog?order=sort_order.asc&select=*`), this.rest(`/stylists?order=name.asc&select=*`),
       this.rest(`/settings?order=key.asc&select=*`)
     ]);
     return { profiles, appointments, sales, saleItems, stamps, referrals, auditLog: [], catalog, stylists, settings };
