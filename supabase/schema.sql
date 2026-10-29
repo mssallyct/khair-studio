@@ -149,7 +149,7 @@ begin
     coalesce(nullif(new.raw_user_meta_data->>'name',''), split_part(new.email,'@',1)),
     nullif(new.raw_user_meta_data->>'phone',''),
     nullif(new.raw_user_meta_data->>'birthday','')::date,
-    case when lower(new.email) = 'mssallyct@gmail.com' then 'admin'::public.user_role else 'member'::public.user_role end
+    case when coalesce(new.raw_app_meta_data->>'role','') = 'admin' then 'admin'::public.user_role else 'member'::public.user_role end
   );
   entered_code := upper(trim(coalesce(new.raw_user_meta_data->>'referral_code_entered','')));
   if entered_code <> '' then

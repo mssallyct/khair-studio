@@ -5,10 +5,11 @@ import { buildAdminWorkbook } from "../js/excel-export.js";
 test("管理員匯出多工作表 XLSX", () => {
   const bytes = buildAdminWorkbook({
     profiles: [
-      { id: "admin-1", role: "admin", name: "管理員", email: "mssallyct@gmail.com", active: true },
-      { id: "member-1", role: "member", name: "香港會員", phone: "9123 4567", email: null, birthday: "1990-05-20", referral_code: "HK1234", active: true, created_at: "2026-10-28T08:00:00Z" }
+      { id: "admin-1", role: "admin", username: "tester", name: "測試管理員", email: null, active: true },
+      { id: "member-1", role: "member", name: "示範會員", phone: "", email: null, birthday: null, referral_code: "DEMO", active: true, created_at: "2026-10-28T08:00:00Z" }
     ],
     appointments: [], sales: [], saleItems: [], stamps: [], referrals: [],
+    auditLog: [{ id: "audit-1", actor_id: "admin-1", actor_username: "tester", actor_name: "測試管理員", action: "member.created", action_label: "新增會員", target_type: "會員", target_id: "member-1", summary: "測試會員", created_at: "2026-10-28T09:00:00Z" }],
     catalog: [{ id: "svc-1", kind: "service", name: "洗剪吹", price: 280, duration_minutes: 60, active: true }],
     stylists: [{ id: "sty-1", name: "髮型師 A", active: true }], settings: []
   }, new Date("2026-10-28T10:00:00Z"));
@@ -17,10 +18,12 @@ test("管理員匯出多工作表 XLSX", () => {
   const files = unzipStoredFiles(bytes);
   assert.ok(files.has("[Content_Types].xml"));
   assert.ok(files.has("xl/workbook.xml"));
-  assert.ok(files.has("xl/worksheets/sheet10.xml"));
+  assert.ok(files.has("xl/worksheets/sheet11.xml"));
   assert.match(files.get("xl/workbook.xml"), /name="會員"/);
-  assert.match(files.get("xl/worksheets/sheet2.xml"), /香港會員/);
+  assert.match(files.get("xl/workbook.xml"), /name="操作記錄"/);
+  assert.match(files.get("xl/worksheets/sheet2.xml"), /示範會員/);
   assert.match(files.get("xl/worksheets/sheet8.xml"), /洗剪吹/);
+  assert.match(files.get("xl/worksheets/sheet10.xml"), /tester/);
 });
 
 function unzipStoredFiles(bytes) {

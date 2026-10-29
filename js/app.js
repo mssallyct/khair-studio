@@ -12,6 +12,7 @@ const state = {
   data: null,
   view: "dashboard",
   loading: false,
+  needsSetup: false,
   modal: null,
   saleItems: []
 };
@@ -20,6 +21,7 @@ boot();
 
 async function boot() {
   if ("serviceWorker" in navigator) navigator.serviceWorker.register("./sw.js").catch(() => null);
+  state.needsSetup = await api.needsCredentialSetup();
   state.session = await api.getSession();
   if (state.session) {
     state.profile = await api.getProfile();
@@ -61,19 +63,29 @@ function renderAuth() {
       <section class="auth-panel">
         <div class="auth-card">
           <p class="eyebrow">K.Hair Studio · Hong Kong</p>
-          <h2>管理員登入</h2>
-          <p class="muted">只供獲授權的 K.Hair Studio 管理員使用。會員由管理員在系統內新增，不設自行註冊。</p>
-          ${loginForm()}
-          ${api.demoMode ? `<div class="demo-note"><strong>私人測試模式</strong><br>管理員：mssallyct@gmail.com<br>密碼可輸入任何內容</div>` : ""}
+          ${state.needsSetup ? credentialSetupForm() : `<h2>管理員登入</h2><p class="muted">只供獲授權的 K.Hair Studio 管理員使用。會員由管理員在系統內新增，不設自行註冊。</p>${loginForm()}${api.demoMode ? `<div class="demo-note"><strong>管理員專用</strong><br>每次資料更新都會記錄登入者及時間。</div>` : ""}`}
         </div>
       </section>
     </main>`;
 }
 
+function credentialSetupForm() {
+  return `<h2>首次登入設定</h2>
+    <p class="muted">只需在此裝置設定一次。密碼資料只會保存在目前瀏覽器，不會上載 GitHub。</p>
+    <form id="credential-setup-form">
+      <label class="field"><span>Sally 密碼</span><input name="sallyPassword" type="password" autocomplete="new-password" required minlength="8"></label>
+      <label class="field"><span>再次輸入 Sally 密碼</span><input name="sallyConfirm" type="password" autocomplete="new-password" required minlength="8"></label>
+      <label class="field"><span>Howood 密碼</span><input name="howoodPassword" type="password" autocomplete="new-password" required minlength="8"></label>
+      <label class="field"><span>再次輸入 Howood 密碼</span><input name="howoodConfirm" type="password" autocomplete="new-password" required minlength="8"></label>
+      <button class="button primary full" type="submit">儲存兩個管理員登入</button>
+    </form>
+    <div class="demo-note"><strong>登入名稱</strong><br>sally<br>howood</div>`;
+}
+
 function loginForm() {
   return `<form id="login-form">
-    <label class="field"><span>電郵</span><input name="email" type="email" autocomplete="email" required value="${api.demoMode ? "mssallyct@gmail.com" : ""}"></label>
-    <label class="field"><span>密碼</span><input name="password" type="password" autocomplete="current-password" required minlength="6" value="${api.demoMode ? "demo123" : ""}"></label>
+    <label class="field"><span>登入名稱</span><input name="username" type="text" autocomplete="username" required autocapitalize="none" spellcheck="false"></label>
+    <label class="field"><span>密碼</span><input name="password" type="password" autocomplete="current-password" required minlength="8"></label>
     <button class="button primary full" type="submit">登入 K.Hair Studio</button>
   </form>`;
 }
@@ -81,7 +93,7 @@ function loginForm() {
 function renderApp() {
   const admin = state.profile.role === "admin";
   const nav = admin ? [
-    ["dashboard", "◫", "營運總覽"], ["appointments", "◷", "預約管理"], ["members", "◎", "會員管理"], ["sales", "$", "消費及印花"], ["settings", "⚙", "服務設定"]
+    ["dashboard", "◫", "營運總覽"], ["appointments", "◷", "預約管理"], ["members", "◎", "會員管理"], ["sales", "$", "消費及印花"], ["settings", "⚙", "服務設定"], ["audit", "≡", "操作記錄"]
   ] : [
     ["dashboard", "⌂", "會員首頁"], ["book", "+", "立即預約"], ["appointments", "◷", "我的預約"], ["rewards", "✦", "電子印花"], ["profile", "◎", "會員資料"]
   ];
@@ -89,7 +101,7 @@ function renderApp() {
     <aside class="sidebar" id="sidebar">
       <div class="brand-lockup"><img class="brand-mark" src="assets/icon.svg" alt=""><span class="brand-name">K.Hair</span></div>
       <nav class="nav-list">${nav.map(([id, icon, label]) => `<button class="nav-item ${state.view === id ? "active" : ""}" data-view="${id}"><span class="nav-icon">${icon}</span>${label}</button>`).join("")}</nav>
-      <div class="sidebar-user"><strong>${esc(state.profile.name)}</strong><span>${esc(state.profile.email)}</span><button data-action="logout">登出</button></div>
+      <div class="sidebar-user"><strong>${esc(state.profile.name)}</strong><span>登入：${esc(state.profile.username || state.profile.email || "管理員")}</span><button data-action="logout">登出</button></div>
     </aside>
     <main class="main">
       <header class="topbar">
@@ -103,7 +115,7 @@ function renderApp() {
 }
 
 function viewTitle() {
-  const map = { dashboard: "今日狀況", book: "預約服務", appointments: state.profile.role === "admin" ? "預約管理" : "我的預約", rewards: "電子印花", profile: "會員資料", members: "會員管理", sales: "消費及印花", settings: "服務設定" };
+  const map = { dashboard: "今日狀況", book: "預約服務", appointments: state.profile.role === "admin" ? "預約管理" : "我的預約", rewards: "電子印花", profile: "會員資料", members: "會員管理", sales: "消費及印花", settings: "服務設定", audit: "操作記錄" };
   return map[state.view] || "K.Hair Studio";
 }
 
@@ -181,6 +193,7 @@ function renderAdminView() {
   if (state.view === "members") return renderMembers();
   if (state.view === "sales") return renderSales();
   if (state.view === "settings") return renderSettings();
+  if (state.view === "audit") return renderAuditLog();
   return renderAdminDashboard();
 }
 
@@ -226,6 +239,14 @@ function renderSales() {
 function renderSettings() {
   return `<div class="grid cols-2"><section class="card"><div class="card-head"><h2>服務及產品</h2><button class="button small" data-action="new-catalog-item">＋ 新增項目</button></div><div class="list">${state.data.catalog.map(item => `<div class="list-item"><div class="list-item-main"><strong>${esc(item.name)}</strong><span>${item.kind === "product" ? "髮型產品" : `${item.duration_minutes}分鐘`}</span></div><strong>${formatMoney(item.price)}</strong></div>`).join("")}</div></section>
   <section class="card"><div class="card-head"><h2>髮型師</h2><span class="muted small">星期一至日</span></div><div class="list">${state.data.stylists.map(item => `<div class="list-item"><div class="list-item-main"><strong>${esc(item.name)}</strong><span>11:00–21:00</span></div><span class="badge active">服務中</span></div>`).join("")}</div></section></div>`;
+}
+
+function renderAuditLog() {
+  const items = state.data.auditLog || [];
+  if (!items.length) return `<section class="card"><div class="card-head"><div><h2>操作記錄</h2><p class="muted small">資料更新後會自動記錄登入者、時間及內容。</p></div></div>${empty("暫時未有操作記錄")}</section>`;
+  return `<section class="card"><div class="card-head"><div><h2>操作記錄</h2><p class="muted small">記錄新增會員、預約、項目、消費、印花及狀態更改。</p></div><span class="muted">${items.length} 項記錄</span></div>
+    <div class="table-wrap"><table><thead><tr><th>時間</th><th>登入者</th><th>操作</th><th>內容</th></tr></thead><tbody>${items.map(item => `<tr><td>${formatDateTime(item.created_at)}</td><td><strong>${esc(item.actor_username || item.actor_name || "管理員")}</strong></td><td>${esc(item.action_label || item.action)}</td><td>${esc(item.summary || "—")}</td></tr>`).join("")}</tbody></table></div>
+  </section>`;
 }
 
 function renderModal() {
@@ -356,6 +377,7 @@ function stampLedgerList(items, admin = false) {
 }
 
 function bindForms() {
+  root.querySelector("#credential-setup-form")?.addEventListener("submit", onCredentialSetup);
   root.querySelector("#login-form")?.addEventListener("submit", onLogin);
   root.querySelector("#member-form")?.addEventListener("submit", onMember);
   root.querySelector("#appointment-form")?.addEventListener("submit", onAdminAppointment);
@@ -397,10 +419,23 @@ root.addEventListener("click", async event => {
   } catch (error) { toast(error.message,true); }
 });
 
+async function onCredentialSetup(event) {
+  event.preventDefault();
+  const form = Object.fromEntries(new FormData(event.currentTarget));
+  if (form.sallyPassword !== form.sallyConfirm) { toast("Sally 兩次輸入的密碼不相同。", true); return; }
+  if (form.howoodPassword !== form.howoodConfirm) { toast("Howood 兩次輸入的密碼不相同。", true); return; }
+  await busy(event.submitter, async () => {
+    await api.setupAdminCredentials({ sally: form.sallyPassword, howood: form.howoodPassword });
+    state.needsSetup = false;
+    render();
+    toast("兩個管理員登入已儲存在此裝置。");
+  });
+}
+
 async function onLogin(event) {
   event.preventDefault(); const form = new FormData(event.currentTarget);
   await busy(event.submitter, async () => {
-    state.session=await api.signIn(form.get("email"),form.get("password"));
+    state.session=await api.signIn(form.get("username"),form.get("password"));
     state.profile=await api.getProfile();
     if (!state.profile || state.profile.role !== "admin") {
       await api.signOut();

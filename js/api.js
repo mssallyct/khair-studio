@@ -11,9 +11,18 @@ export class KhairApi {
     this.session = this.demoMode ? null : loadStoredSession();
   }
 
-  async signIn(email, password) {
-    if (this.demoMode) return this.demo.signIn(email);
-    const session = await this.authRequest(`/token?grant_type=password`, { email, password });
+  async needsCredentialSetup() {
+    return this.demoMode ? this.demo.needsCredentialSetup() : false;
+  }
+
+  async setupAdminCredentials(passwords) {
+    if (!this.demoMode) throw new Error("中央登入模式不使用裝置密碼設定。");
+    return this.demo.setupCredentials(passwords);
+  }
+
+  async signIn(username, password) {
+    if (this.demoMode) return this.demo.signIn(username, password);
+    const session = await this.authRequest(`/token?grant_type=password`, { email: username, password });
     this.setSession(session); return session;
   }
 
@@ -92,7 +101,7 @@ export class KhairApi {
       this.getCatalog(), this.getStylists(),
       this.rest(`/settings?order=key.asc&select=*`)
     ]);
-    return { profiles, appointments, sales, saleItems, stamps, referrals, catalog, stylists, settings };
+    return { profiles, appointments, sales, saleItems, stamps, referrals, auditLog: [], catalog, stylists, settings };
   }
 
   async createMember({ name, phone, email, birthday, referrerId, adminId }) {

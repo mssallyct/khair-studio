@@ -27,6 +27,7 @@ export function buildAdminWorkbook(data = {}, exportedAt = new Date()) {
 function buildSheets(data, exportedAt) {
   const profiles = data.profiles || [];
   const members = profiles.filter(item => item.role === "member");
+  const admins = profiles.filter(item => item.role === "admin");
   const appointments = data.appointments || [];
   const sales = data.sales || [];
   const saleItems = data.saleItems || [];
@@ -35,15 +36,18 @@ function buildSheets(data, exportedAt) {
   const catalog = data.catalog || [];
   const stylists = data.stylists || [];
   const settings = data.settings || [];
+  const auditLog = data.auditLog || [];
   const memberById = new Map(members.map(item => [item.id, item]));
   const catalogById = new Map(catalog.map(item => [item.id, item]));
   const stylistById = new Map(stylists.map(item => [item.id, item]));
   const saleById = new Map(sales.map(item => [item.id, item]));
+  const adminById = new Map(admins.map(item => [item.id, item]));
   const balance = memberId => stamps.filter(item => item.member_id === memberId).reduce((sum, item) => sum + Number(item.delta || 0), 0);
   const memberName = id => memberById.get(id)?.name || "";
   const memberPhone = id => memberById.get(id)?.phone || "";
   const serviceName = id => catalogById.get(id)?.name || "";
   const stylistName = id => stylistById.get(id)?.name || "";
+  const adminName = id => adminById.get(id)?.username || adminById.get(id)?.name || "";
 
   return [
     {
@@ -56,6 +60,7 @@ function buildSheets(data, exportedAt) {
         ["消費記錄總數", integer(sales.length)],
         ["累計實收金額", currency(sales.reduce((sum, item) => sum + Number(item.final_amount || 0), 0))],
         ["印花變動記錄總數", integer(stamps.length)],
+        ["操作記錄總數", integer(auditLog.length)],
         ["資料地區", "香港"],
         ["貨幣", "HKD"],
         ["時區", "Asia/Hong_Kong"]
@@ -63,18 +68,18 @@ function buildSheets(data, exportedAt) {
     },
     {
       name: "會員",
-      headers: ["會員編號", "姓名", "香港電話", "電郵", "生日", "介紹編號", "印花結餘", "狀態", "建立時間"],
-      rows: members.map(item => [item.id, item.name, item.phone || "", item.email || "", dateOnly(item.birthday), item.referral_code || "", integer(balance(item.id)), item.active === false ? "停用" : "有效", dateTime(item.created_at)])
+      headers: ["會員編號", "姓名", "香港電話", "電郵", "生日", "介紹編號", "印花結餘", "狀態", "建立者", "建立時間"],
+      rows: members.map(item => [item.id, item.name, item.phone || "", item.email || "", dateOnly(item.birthday), item.referral_code || "", integer(balance(item.id)), item.active === false ? "停用" : "有效", adminName(item.created_by), dateTime(item.created_at)])
     },
     {
       name: "預約",
-      headers: ["預約編號", "日期時間", "會員姓名", "香港電話", "服務", "髮型師", "狀態", "備註", "建立時間"],
-      rows: appointments.map(item => [item.id, dateTime(item.start_at), memberName(item.member_id), memberPhone(item.member_id), serviceName(item.service_id), stylistName(item.stylist_id), appointmentLabel(item.status), item.note || "", dateTime(item.created_at)])
+      headers: ["預約編號", "日期時間", "會員姓名", "香港電話", "服務", "髮型師", "狀態", "備註", "建立者", "最後更新者", "建立時間"],
+      rows: appointments.map(item => [item.id, dateTime(item.start_at), memberName(item.member_id), memberPhone(item.member_id), serviceName(item.service_id), stylistName(item.stylist_id), appointmentLabel(item.status), item.note || "", adminName(item.created_by), adminName(item.updated_by), dateTime(item.created_at)])
     },
     {
       name: "消費",
-      headers: ["消費編號", "完成時間", "會員姓名", "香港電話", "原價", "折扣", "實收", "優惠", "使用印花", "相關預約"],
-      rows: sales.map(item => [item.id, dateTime(item.completed_at), memberName(item.member_id), memberPhone(item.member_id), currency(item.subtotal), currency(item.discount), currency(item.final_amount), item.discount_label || "", integer(item.stamp_redeemed || 0), item.appointment_id || ""])
+      headers: ["消費編號", "完成時間", "會員姓名", "香港電話", "原價", "折扣", "實收", "優惠", "使用印花", "相關預約", "完成者"],
+      rows: sales.map(item => [item.id, dateTime(item.completed_at), memberName(item.member_id), memberPhone(item.member_id), currency(item.subtotal), currency(item.discount), currency(item.final_amount), item.discount_label || "", integer(item.stamp_redeemed || 0), item.appointment_id || "", adminName(item.completed_by)])
     },
     {
       name: "消費項目",
@@ -86,8 +91,8 @@ function buildSheets(data, exportedAt) {
     },
     {
       name: "印花",
-      headers: ["記錄編號", "時間", "會員姓名", "香港電話", "增減", "類型", "原因", "相關消費"],
-      rows: stamps.map(item => [item.id, dateTime(item.created_at), memberName(item.member_id), memberPhone(item.member_id), integer(item.delta), stampLabel(item.type), item.reason || "", item.sale_id || ""])
+      headers: ["記錄編號", "時間", "會員姓名", "香港電話", "增減", "類型", "原因", "相關消費", "操作人"],
+      rows: stamps.map(item => [item.id, dateTime(item.created_at), memberName(item.member_id), memberPhone(item.member_id), integer(item.delta), stampLabel(item.type), item.reason || "", item.sale_id || "", adminName(item.created_by)])
     },
     {
       name: "介紹記錄",
@@ -96,13 +101,18 @@ function buildSheets(data, exportedAt) {
     },
     {
       name: "服務及產品",
-      headers: ["項目編號", "類型", "名稱", "價格", "所需分鐘", "狀態", "排序"],
-      rows: catalog.map(item => [item.id, item.kind === "product" ? "產品" : "服務", item.name, currency(item.price), integer(item.duration_minutes), item.active === false ? "停用" : "有效", integer(item.sort_order || 0)])
+      headers: ["項目編號", "類型", "名稱", "價格", "所需分鐘", "狀態", "排序", "建立者"],
+      rows: catalog.map(item => [item.id, item.kind === "product" ? "產品" : "服務", item.name, currency(item.price), integer(item.duration_minutes), item.active === false ? "停用" : "有效", integer(item.sort_order || 0), adminName(item.created_by)])
     },
     {
       name: "髮型師",
       headers: ["髮型師編號", "姓名", "狀態", "建立時間"],
       rows: stylists.map(item => [item.id, item.name, item.active === false ? "停用" : "服務中", dateTime(item.created_at)])
+    },
+    {
+      name: "操作記錄",
+      headers: ["時間", "登入名稱", "管理員", "操作", "類別", "記錄編號", "內容"],
+      rows: auditLog.map(item => [dateTime(item.created_at), item.actor_username || adminById.get(item.actor_id)?.username || "", item.actor_name || adminById.get(item.actor_id)?.name || "", item.action_label || item.action || "", item.target_type || "", item.target_id || "", item.summary || ""])
     },
     {
       name: "系統設定",
