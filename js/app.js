@@ -51,7 +51,7 @@ function renderAuth() {
   return `
     <main class="auth-shell">
       <section class="brand-panel">
-        <div class="brand-lockup"><img class="brand-mark" src="assets/icon.svg" alt=""><span class="brand-name">K.Hair Studio</span></div>
+        <div class="brand-lockup"><img class="brand-mark" src="assets/logo.png" alt="K.Hair Studio Logo"><span class="brand-name">K.Hair Studio</span></div>
         <div class="brand-copy">
           <p class="eyebrow">Member · Booking · Rewards</p>
           <h1>Your hair,<br>your moment.</h1>
@@ -88,7 +88,7 @@ function renderApp() {
   ];
   return `<div class="app-shell">
     <aside class="sidebar" id="sidebar">
-      <div class="brand-lockup"><img class="brand-mark" src="assets/icon.svg" alt=""><span class="brand-name">K.Hair</span></div>
+      <div class="brand-lockup"><img class="brand-mark" src="assets/logo.png" alt="K.Hair Studio Logo"><span class="brand-name">K.Hair</span></div>
       <nav class="nav-list">${nav.map(([id, icon, label]) => `<button class="nav-item ${state.view === id ? "active" : ""}" data-view="${id}"><span class="nav-icon">${icon}</span>${label}</button>`).join("")}</nav>
       <div class="sidebar-user"><strong>${esc(state.profile.name)}</strong><span>登入：${esc(state.profile.username || state.profile.email || "管理員")}</span><button data-action="logout">登出</button></div>
     </aside>

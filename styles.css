@@ -58,7 +58,7 @@ a { color: inherit; }
 .brand-panel::before { width: 520px; height: 520px; right: -220px; top: -180px; }
 .brand-panel::after { width: 360px; height: 360px; left: -190px; bottom: -130px; }
 .brand-lockup { position: relative; z-index: 1; display: flex; align-items: center; gap: 16px; }
-.brand-mark { width: 56px; height: 56px; border-radius: 18px; box-shadow: 0 12px 28px rgba(0,0,0,.2); }
+.brand-mark { width: 56px; height: 56px; border-radius: 50%; object-fit: cover; background: #fff; box-shadow: 0 12px 28px rgba(0,0,0,.2); }
 .brand-name { font-family: "Playfair Display", serif; font-size: clamp(2rem, 4vw, 4rem); letter-spacing: -.03em; }
 .brand-copy { position: relative; z-index: 1; max-width: 640px; }
 .brand-copy h1 { margin: 0 0 20px; font-family: "Playfair Display", serif; font-size: clamp(3rem, 7vw, 7rem); line-height: .94; letter-spacing: -.05em; }
@@ -111,7 +111,7 @@ a { color: inherit; }
 .app-shell { min-height: 100vh; display: grid; grid-template-columns: 250px 1fr; }
 .sidebar { position: sticky; top: 0; height: 100vh; padding: 28px 18px; display: flex; flex-direction: column; color: #fff; background: var(--ink); }
 .sidebar .brand-lockup { gap: 12px; padding: 0 8px 28px; }
-.sidebar .brand-mark { width: 42px; height: 42px; border-radius: 13px; }
+.sidebar .brand-mark { width: 42px; height: 42px; border-radius: 50%; }
 .sidebar .brand-name { font-size: 1.3rem; }
 .nav-list { display: grid; gap: 6px; }
 .nav-item { width: 100%; border: 0; border-radius: 13px; padding: 12px 13px; display: flex; align-items: center; gap: 12px; color: rgba(255,255,255,.68); background: transparent; text-align: left; font-weight: 600; }
