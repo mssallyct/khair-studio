@@ -190,6 +190,12 @@ td { font-size: .86rem; }
 .sale-summary { margin: 12px 0 20px; padding: 16px; border-radius: 15px; background: #f0eadf; }
 .sale-summary > div { display: flex; justify-content: space-between; padding: 5px 0; }
 .sale-summary .total { margin-top: 7px; padding-top: 12px; border-top: 1px solid #d5cab7; font-size: 1.08rem; font-weight: 700; }
+.sale-item-card { transform-origin: center bottom; }
+.sale-item-new { animation: sale-item-rise .3s ease-out both; }
+@keyframes sale-item-rise {
+  from { opacity: 0; transform: translateY(24px) scale(.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
 
 .toast { position: fixed; z-index: 200; left: 50%; bottom: 28px; max-width: min(90vw, 520px); padding: 12px 18px; border-radius: 13px; color: #fff; background: var(--ink); box-shadow: var(--shadow); transform: translate(-50%, 120px); opacity: 0; transition: .28s ease; }
 .toast.show { transform: translate(-50%,0); opacity: 1; }
@@ -197,6 +203,10 @@ td { font-size: .86rem; }
 
 .spinner { width: 22px; height: 22px; border: 2px solid rgba(255,255,255,.35); border-top-color: #fff; border-radius: 50%; animation: spin .8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .sale-item-new { animation: none; }
+}
 
 @media (max-width: 980px) {
   .auth-shell { grid-template-columns: 1fr; }

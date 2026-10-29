@@ -317,7 +317,7 @@ function saleModal() {
 }
 
 function saleItemRow(item,index) {
-  return `<div class="list-item"><div class="form-grid" style="flex:1">
+  return `<div class="list-item sale-item-card ${item.justAdded ? "sale-item-new" : ""}"><div class="form-grid" style="flex:1">
     <label class="field span-2"><span>項目</span><select data-sale-catalog data-index="${index}" required>${catalogOptions(item.catalogId)}</select></label>
     <label class="field"><span>數量</span><input data-sale-field="quantity" data-index="${index}" type="number" min="1" value="${item.quantity}"></label>
     <label class="field"><span>單價</span><input data-sale-field="unitPrice" data-index="${index}" type="number" min="0" step="0.01" value="${item.unitPrice}"></label>
@@ -403,7 +403,15 @@ root.addEventListener("click", async event => {
     if (action === "new-catalog-item") { state.modal={type:"catalog"}; render(); }
     if (["new-sale","sale-member","sale-from-appointment"].includes(action)) { state.modal={type:"sale",memberId:target.dataset.member||null,appointmentId:target.dataset.id||null,redemption:0}; state.saleItems=[]; render(); }
     if (["adjust-stamps","stamps-member"].includes(action)) { state.modal={type:"stamps",memberId:target.dataset.member||null}; render(); }
-    if (action === "add-sale-item") { const first=state.data.catalog[0]; if(first) state.saleItems.push(catalogToSaleItem(first)); render(); }
+    if (action === "add-sale-item") {
+      const first=state.data.catalog[0];
+      if (first) {
+        const newItem={...catalogToSaleItem(first),justAdded:true};
+        state.saleItems.unshift(newItem);
+        render();
+        requestAnimationFrame(()=>{newItem.justAdded=false;});
+      }
+    }
     if (action === "remove-sale-item") { state.saleItems.splice(Number(target.dataset.index),1); render(); }
   } catch (error) { toast(error.message,true); }
 });
