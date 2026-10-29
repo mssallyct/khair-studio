@@ -1,6 +1,7 @@
 import { KhairApi } from "./api.js";
 import { APPOINTMENT_LABELS, calculateSale, formatDateTime, formatMoney, generateTimeSlots } from "./rules.js";
 import { downloadAdminWorkbook } from "./excel-export.js";
+import { findMembersByPhone, normalizePhoneSearch } from "./member-search.js";
 
 const api = new KhairApi(window.KHAIR_CONFIG || {});
 const root = document.querySelector("#app");
@@ -252,7 +253,7 @@ function appointmentModal() {
   const firstService = services[0];
   return `<div class="modal-backdrop"><section class="modal"><div class="modal-head"><div><p class="eyebrow">Admin Appointment</p><h2>新增預約</h2></div><button class="icon-button" data-action="close-modal">×</button></div>
     <form id="appointment-form" class="form-grid">
-      <label class="field span-2"><span>會員</span><select name="memberId" required>${members.map(item => `<option value="${item.id}">${esc(item.name)} · ${esc(item.phone || "")}</option>`).join("")}</select></label>
+      ${memberPhoneLookup({ name: "memberId", inputId: "appointment-member-phone", label: "會員（輸入電話搜尋）", required: true })}
       <label class="field"><span>服務</span><select name="serviceId" id="appointment-service" required>${services.map(item => `<option value="${item.id}" data-duration="${item.duration_minutes}">${esc(item.name)} · ${formatMoney(item.price)}</option>`).join("")}</select></label>
       <label class="field"><span>髮型師</span><select name="stylistId" required>${state.data.stylists.map(item => `<option value="${item.id}">${esc(item.name)}</option>`).join("")}</select></label>
       <label class="field"><span>日期</span><input name="date" type="date" required min="${localDate(new Date())}"></label>
@@ -277,14 +278,13 @@ function catalogModal() {
 }
 
 function memberModal() {
-  const members = state.data.profiles.filter(item => item.role === "member");
   return `<div class="modal-backdrop"><section class="modal"><div class="modal-head"><div><p class="eyebrow">Hong Kong Member</p><h2>新增會員</h2></div><button class="icon-button" data-action="close-modal">×</button></div>
     <form id="member-form" class="form-grid">
       <label class="field span-2"><span>會員姓名</span><input name="name" required maxlength="80" autocomplete="off"></label>
       <label class="field"><span>香港電話</span><input name="phone" type="tel" inputmode="numeric" required maxlength="13" placeholder="9123 4567" autocomplete="off"></label>
       <label class="field"><span>生日（選填）</span><input name="birthday" type="date"></label>
       <label class="field span-2"><span>電郵（選填）</span><input name="email" type="email" autocomplete="off" placeholder="沒有可留空"></label>
-      <label class="field span-2"><span>介紹人（選填）</span><select name="referrerId"><option value="">沒有介紹人</option>${members.map(item => `<option value="${item.id}">${esc(item.name)} · ${esc(item.phone || "")}</option>`).join("")}</select></label>
+      ${memberPhoneLookup({ name: "referrerId", inputId: "referrer-member-phone", label: "介紹人（選填，以電話搜尋）" })}
       <p class="muted small span-2">會員不會獲得登入帳戶；所有資料只由管理員處理。</p>
       <button class="button primary full span-2" type="submit">建立會員</button>
     </form>
@@ -319,7 +319,6 @@ function saleModal() {
 function saleItemRow(item,index) {
   return `<div class="list-item"><div class="form-grid" style="flex:1">
     <label class="field span-2"><span>項目</span><select data-sale-catalog data-index="${index}" required>${catalogOptions(item.catalogId)}</select></label>
-    <label class="field"><span>類型</span><input value="${item.kind === "product" ? "產品" : "服務"}" disabled></label>
     <label class="field"><span>數量</span><input data-sale-field="quantity" data-index="${index}" type="number" min="1" value="${item.quantity}"></label>
     <label class="field"><span>單價</span><input data-sale-field="unitPrice" data-index="${index}" type="number" min="0" step="0.01" value="${item.unitPrice}"></label>
   </div>${state.saleItems.length>1?`<button class="icon-button" type="button" data-action="remove-sale-item" data-index="${index}">×</button>`:""}</div>`;
@@ -376,6 +375,7 @@ function bindForms() {
   root.querySelector("#appointment-service")?.addEventListener("change", updateAdminAppointmentTimes);
   root.querySelector("#catalog-kind")?.addEventListener("change", updateCatalogDuration);
   root.querySelector("#member-search")?.addEventListener("input", filterMembers);
+  root.querySelectorAll("[data-member-lookup-input]").forEach(input => input.addEventListener("input", updateMemberLookupResults));
   root.querySelector("#sale-member")?.addEventListener("change", event => { state.modal.memberId = event.target.value; render(); });
   root.querySelector("#sale-redemption")?.addEventListener("change", event => { state.modal.redemption = Number(event.target.value); render(); });
   root.querySelectorAll("[data-sale-field]").forEach(input => input.addEventListener("change", updateSaleItem));
@@ -389,6 +389,8 @@ root.addEventListener("click", async event => {
   if (!target) return;
   const { action } = target.dataset;
   try {
+    if (action === "select-member-lookup") { selectMemberLookup(target); return; }
+    if (action === "clear-member-lookup") { clearMemberLookup(target); return; }
     if (action === "logout") { await api.signOut(); Object.assign(state,{session:null,profile:null,data:null,view:"dashboard"}); render(); }
     if (action === "refresh") await refresh();
     if (action === "export-data") { const fileName=downloadAdminWorkbook(state.data); toast(`${fileName} 已匯出。`); }
@@ -423,6 +425,11 @@ async function onLogin(event) {
 
 async function onMember(event) {
   event.preventDefault(); const form = Object.fromEntries(new FormData(event.currentTarget));
+  const referrerSearch = event.currentTarget.querySelector("[data-member-lookup-input]")?.value.trim();
+  if (referrerSearch && !form.referrerId) {
+    toast("請從搜尋結果選擇介紹人，或清空電話搜尋欄。", true);
+    return;
+  }
   await busy(event.submitter, async () => {
     await api.createMember({...form,adminId:state.profile.id});
     state.modal=null;
@@ -433,6 +440,10 @@ async function onMember(event) {
 
 async function onAdminAppointment(event) {
   event.preventDefault(); const form=Object.fromEntries(new FormData(event.currentTarget));
+  if (!form.memberId) {
+    toast("請輸入會員電話，並從搜尋結果選擇會員。", true);
+    return;
+  }
   await busy(event.submitter, async()=>{
     await api.createAppointment(form);
     state.modal=null;
@@ -509,6 +520,63 @@ function catalogOptions(selectedId){
 function filterMembers(event) {
   const query=event.target.value.trim().toLowerCase();
   root.querySelectorAll("[data-member-search]").forEach(row=>row.classList.toggle("hidden",!row.dataset.memberSearch.includes(query)));
+}
+
+function memberPhoneLookup({ name, inputId, label, required = false }) {
+  return `<div class="field span-2 member-lookup" data-member-lookup>
+    <label class="field-label" for="${inputId}">${esc(label)}</label>
+    <div class="member-lookup-input"><span class="member-lookup-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"></circle><path d="m16.5 16.5 4 4"></path></svg></span><input id="${inputId}" data-member-lookup-input type="tel" inputmode="tel" autocomplete="off" placeholder="輸入最少3個電話數字" ${required ? "required" : ""}></div>
+    <input type="hidden" name="${name}" data-member-lookup-value value="">
+    <div class="member-lookup-results" data-member-lookup-results aria-live="polite"></div>
+    <div class="member-lookup-selected" data-member-lookup-selected hidden></div>
+  </div>`;
+}
+
+function updateMemberLookupResults(event) {
+  const lookup = event.target.closest("[data-member-lookup]");
+  const results = lookup.querySelector("[data-member-lookup-results]");
+  const selected = lookup.querySelector("[data-member-lookup-selected]");
+  const value = lookup.querySelector("[data-member-lookup-value]");
+  const query = event.target.value.trim();
+  const digits = normalizePhoneSearch(query);
+
+  value.value = "";
+  selected.hidden = true;
+  selected.innerHTML = "";
+  if (!query) { results.innerHTML = ""; return; }
+  if (digits.length < 3) {
+    results.innerHTML = `<p class="member-lookup-hint">請再輸入電話號碼，最少3個數字。</p>`;
+    return;
+  }
+
+  const matches = findMembersByPhone(state.data.profiles, query);
+  results.innerHTML = matches.length
+    ? matches.map(member => `<button class="member-lookup-result" type="button" data-action="select-member-lookup" data-member-id="${esc(member.id)}"><span>${esc(member.name)}</span><strong>${esc(member.phone || "未有電話")}</strong></button>`).join("")
+    : `<p class="member-lookup-hint no-result">找不到此電話的會員。</p>`;
+}
+
+function selectMemberLookup(target) {
+  const lookup = target.closest("[data-member-lookup]");
+  const member = state.data.profiles.find(item => item.id === target.dataset.memberId && item.role === "member");
+  if (!member) return;
+  lookup.querySelector("[data-member-lookup-input]").value = member.phone || "";
+  lookup.querySelector("[data-member-lookup-value]").value = member.id;
+  lookup.querySelector("[data-member-lookup-results]").innerHTML = "";
+  const selected = lookup.querySelector("[data-member-lookup-selected]");
+  selected.hidden = false;
+  selected.innerHTML = `<span>已選擇：<strong>${esc(member.name)}</strong> · ${esc(member.phone || "未有電話")}</span><button type="button" data-action="clear-member-lookup">重新搜尋</button>`;
+}
+
+function clearMemberLookup(target) {
+  const lookup = target.closest("[data-member-lookup]");
+  const input = lookup.querySelector("[data-member-lookup-input]");
+  input.value = "";
+  lookup.querySelector("[data-member-lookup-value]").value = "";
+  lookup.querySelector("[data-member-lookup-results]").innerHTML = "";
+  const selected = lookup.querySelector("[data-member-lookup-selected]");
+  selected.hidden = true;
+  selected.innerHTML = "";
+  input.focus();
 }
 
 async function busy(button, fn) {

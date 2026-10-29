@@ -1,5 +1,5 @@
-const CACHE = "khair-v6";
-const ASSETS = ["./", "./index.html", "./styles.css", "./js/app.js", "./js/api.js", "./js/demo-store.js", "./js/rules.js", "./js/excel-export.js", "./assets/icon.svg", "./manifest.webmanifest", "./config.js"];
+const CACHE = "khair-v7";
+const ASSETS = ["./", "./index.html", "./styles.css", "./js/app.js", "./js/api.js", "./js/demo-store.js", "./js/rules.js", "./js/member-search.js", "./js/excel-export.js", "./assets/icon.svg", "./manifest.webmanifest", "./config.js"];
 
 self.addEventListener("install", event => event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(ASSETS))));
 self.addEventListener("activate", event => event.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(key => key !== CACHE).map(key => caches.delete(key))))));
