@@ -57,4 +57,4 @@ GitHub Pages 簡單版使用 Demo Mode，資料只儲存在目前瀏覽器／裝
 
 Repository 已包括 GitHub Pages workflow。推送至 `main` 後，於 GitHub Settings → Pages 將 Source 設為 **GitHub Actions**。
 
-公開網址：`https://mssallyct.github.io/khair-studio/`
+公開網址：<https://mssallyct.github.io/khair-studio/>（部署更新：2026-10-29）
