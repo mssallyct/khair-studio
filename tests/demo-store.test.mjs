@@ -63,6 +63,7 @@ test("舊裝置資料升級後保留會員並換成新管理員", () => {
   assert.equal(store.data.profiles.some(item => item.id === "admin-1"), false);
   assert.equal(store.data.profiles.find(item => item.id === "admin-tester")?.username, "tester");
   assert.equal(store.data.stampLedger[0].created_by, "admin-tester");
+  assert.deepEqual(store.data.assistants, []);
 });
 
 test("管理員可新增香港會員及設定介紹人", async () => {
@@ -134,6 +135,22 @@ test("髮型師可新增及安全刪除並保留歷史資料", async () => {
   assert.equal(store.data.auditLog.at(-1).actor_username, "tester");
 });
 
+test("髮型助理可新增及安全刪除並保留歷史資料", async () => {
+  localStorage.clear();
+  const store = await createAuthenticatedStore();
+  const assistant = await store.createAssistant("Assistant May");
+  assert.equal(assistant.name, "Assistant May");
+  assert.equal(store.data.auditLog.at(-1).action, "assistant.created");
+  assert.equal((await store.getAssistants()).some(item => item.id === assistant.id), true);
+
+  const deleted = await store.deleteAssistant(assistant.id);
+  assert.equal(deleted.active, false);
+  assert.equal((await store.getAssistants()).some(item => item.id === assistant.id), false);
+  assert.equal(store.data.assistants.find(item => item.id === assistant.id)?.name, "Assistant May");
+  assert.equal(store.data.auditLog.at(-1).action, "assistant.deleted");
+  assert.equal(store.data.auditLog.at(-1).actor_username, "tester");
+});
+
 test("所有主要資料更新均記錄登入管理員", async () => {
   localStorage.clear();
   const store = await createAuthenticatedStore();
@@ -143,6 +160,8 @@ test("所有主要資料更新均記錄登入管理員", async () => {
   await store.completeSale({
     memberId: "member-1",
     appointmentId: "apt-1",
+    stylistId: "sty-a",
+    assistantId: "assistant-a",
     items: [{ kind: "service", name: "洗剪吹", quantity: 1, unitPrice: 600 }],
     requestedRedemption: 0,
     adminId: "admin-tester"
@@ -152,4 +171,7 @@ test("所有主要資料更新均記錄登入管理員", async () => {
   assert.deepEqual(actions, ["appointment.status_updated", "stamps.adjusted", "sale.completed"]);
   assert.ok(store.data.auditLog.every(item => item.actor_username === "tester"));
   assert.ok(store.data.auditLog.every(item => item.actor_id === "admin-tester"));
+  assert.equal(store.data.sales.at(-1).stylist_id, "sty-a");
+  assert.equal(store.data.sales.at(-1).assistant_id, "assistant-a");
+  assert.match(store.data.auditLog.at(-1).summary, /Hair Stylist A.*Hair Assistant A/);
 });

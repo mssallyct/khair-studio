@@ -35,11 +35,13 @@ function buildSheets(data, exportedAt) {
   const referrals = data.referrals || [];
   const catalog = data.catalog || [];
   const stylists = data.stylists || [];
+  const assistants = data.assistants || [];
   const settings = data.settings || [];
   const auditLog = data.auditLog || [];
   const memberById = new Map(members.map(item => [item.id, item]));
   const catalogById = new Map(catalog.map(item => [item.id, item]));
   const stylistById = new Map(stylists.map(item => [item.id, item]));
+  const assistantById = new Map(assistants.map(item => [item.id, item]));
   const saleById = new Map(sales.map(item => [item.id, item]));
   const adminById = new Map(admins.map(item => [item.id, item]));
   const balance = memberId => stamps.filter(item => item.member_id === memberId).reduce((sum, item) => sum + Number(item.delta || 0), 0);
@@ -47,6 +49,7 @@ function buildSheets(data, exportedAt) {
   const memberPhone = id => memberById.get(id)?.phone || "";
   const serviceName = id => catalogById.get(id)?.name || "";
   const stylistName = id => stylistById.get(id)?.name || "";
+  const assistantName = id => assistantById.get(id)?.name || "";
   const adminName = id => adminById.get(id)?.username || adminById.get(id)?.name || "";
 
   return [
@@ -78,8 +81,8 @@ function buildSheets(data, exportedAt) {
     },
     {
       name: "消費",
-      headers: ["消費編號", "完成時間", "會員姓名", "香港電話", "原價", "折扣", "實收", "優惠", "使用印花", "相關預約", "完成者"],
-      rows: sales.map(item => [item.id, dateTime(item.completed_at), memberName(item.member_id), memberPhone(item.member_id), currency(item.subtotal), currency(item.discount), currency(item.final_amount), item.discount_label || "", integer(item.stamp_redeemed || 0), item.appointment_id || "", adminName(item.completed_by)])
+      headers: ["消費編號", "完成時間", "會員姓名", "香港電話", "原價", "折扣", "實收", "優惠", "使用印花", "相關預約", "跟進髮型師", "跟進髮型助理", "完成者"],
+      rows: sales.map(item => [item.id, dateTime(item.completed_at), memberName(item.member_id), memberPhone(item.member_id), currency(item.subtotal), currency(item.discount), currency(item.final_amount), item.discount_label || "", integer(item.stamp_redeemed || 0), item.appointment_id || "", stylistName(item.stylist_id), assistantName(item.assistant_id), adminName(item.completed_by)])
     },
     {
       name: "消費項目",
@@ -108,6 +111,11 @@ function buildSheets(data, exportedAt) {
       name: "髮型師",
       headers: ["髮型師編號", "姓名", "狀態", "建立時間"],
       rows: stylists.map(item => [item.id, item.name, item.active === false ? "停用" : "服務中", dateTime(item.created_at)])
+    },
+    {
+      name: "髮型助理",
+      headers: ["髮型助理編號", "姓名", "狀態", "建立時間"],
+      rows: assistants.map(item => [item.id, item.name, item.active === false ? "停用" : "服務中", dateTime(item.created_at)])
     },
     {
       name: "操作記錄",

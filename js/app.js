@@ -267,8 +267,12 @@ function renderSales() {
 function renderSettings() {
   const catalog = activeCatalogItems();
   const stylists = activeStylistItems();
-  return `<div class="grid cols-2"><section class="card"><div class="card-head"><h2>服務及產品</h2><button class="button small" data-action="new-catalog-item">＋ 新增項目</button></div>${catalog.length ? `<div class="list">${catalog.map(item => `<div class="list-item"><div class="list-item-main"><strong>${esc(item.name)}</strong><span>${item.kind === "product" ? "髮型產品" : `${item.duration_minutes}分鐘`}</span></div><div class="list-item-side"><strong>${formatMoney(item.price)}</strong><div class="actions catalog-actions"><button class="button ghost small" data-action="edit-catalog-item" data-id="${esc(item.id)}">修改</button><button class="button ghost small catalog-delete" data-action="delete-catalog-item" data-id="${esc(item.id)}">刪除</button></div></div></div>`).join("")}</div>` : empty("暫時未有服務或產品")}</section>
-  <section class="card"><div class="card-head"><div><h2>髮型師</h2><span class="muted small">星期一至日 11:00–21:00</span></div><button class="button small" data-action="new-stylist">＋ 新增髮型師</button></div>${stylists.length ? `<div class="list">${stylists.map(item => `<div class="list-item"><div class="list-item-main"><strong>${esc(item.name)}</strong><span>服務中</span></div><div class="list-item-side"><span class="badge active">服務中</span><div class="actions catalog-actions"><button class="button ghost small catalog-delete" data-action="delete-stylist" data-id="${esc(item.id)}">刪除</button></div></div></div>`).join("")}</div>` : empty("暫時未有髮型師")}</section></div>`;
+  const assistants = activeAssistantItems();
+  return `<div class="grid cols-2">
+    <section class="card"><div class="card-head"><h2>服務及產品</h2><button class="button small" data-action="new-catalog-item">＋ 新增項目</button></div>${catalog.length ? `<div class="list">${catalog.map(item => `<div class="list-item"><div class="list-item-main"><strong>${esc(item.name)}</strong><span>${item.kind === "product" ? "髮型產品" : `${item.duration_minutes}分鐘`}</span></div><div class="list-item-side"><strong>${formatMoney(item.price)}</strong><div class="actions catalog-actions"><button class="button ghost small" data-action="edit-catalog-item" data-id="${esc(item.id)}">修改</button><button class="button ghost small catalog-delete" data-action="delete-catalog-item" data-id="${esc(item.id)}">刪除</button></div></div></div>`).join("")}</div>` : empty("暫時未有服務或產品")}</section>
+    <section class="card"><div class="card-head"><div><h2>髮型師</h2><span class="muted small">預約及消費跟進人員</span></div><button class="button small" data-action="new-stylist">＋ 新增髮型師</button></div>${stylists.length ? `<div class="list">${stylists.map(item => `<div class="list-item"><div class="list-item-main"><strong>${esc(item.name)}</strong><span>服務中</span></div><div class="list-item-side"><span class="badge active">服務中</span><div class="actions catalog-actions"><button class="button ghost small catalog-delete" data-action="delete-stylist" data-id="${esc(item.id)}">刪除</button></div></div></div>`).join("")}</div>` : empty("暫時未有髮型師")}</section>
+    <section class="card"><div class="card-head"><div><h2>髮型助理</h2><span class="muted small">消費跟進時可選填</span></div><button class="button small" data-action="new-assistant">＋ 新增髮型助理</button></div>${assistants.length ? `<div class="list">${assistants.map(item => `<div class="list-item"><div class="list-item-main"><strong>${esc(item.name)}</strong><span>服務中</span></div><div class="list-item-side"><span class="badge active">服務中</span><div class="actions catalog-actions"><button class="button ghost small catalog-delete" data-action="delete-assistant" data-id="${esc(item.id)}">刪除</button></div></div></div>`).join("")}</div>` : empty("暫時未有髮型助理")}</section>
+  </div>`;
 }
 
 function renderAuditLog() {
@@ -286,6 +290,8 @@ function renderModal() {
   if (state.modal.type === "catalog-delete") return catalogDeleteModal();
   if (state.modal.type === "stylist") return stylistModal();
   if (state.modal.type === "stylist-delete") return stylistDeleteModal();
+  if (state.modal.type === "assistant") return assistantModal();
+  if (state.modal.type === "assistant-delete") return assistantDeleteModal();
   if (state.modal.type === "sale") return saleModal();
   if (state.modal.type === "stamps") return stampModal();
   return "";
@@ -353,6 +359,24 @@ function stylistDeleteModal() {
   </section></div>`;
 }
 
+function assistantModal() {
+  return `<div class="modal-backdrop"><section class="modal confirmation-modal"><div class="modal-head"><div><p class="eyebrow">Hair Assistant</p><h2>新增髮型助理</h2></div><button class="icon-button" data-action="close-modal">×</button></div>
+    <form id="assistant-form">
+      <label class="field"><span>髮型助理名稱</span><input name="name" required maxlength="80" autocomplete="off" placeholder="例如：Assistant May"></label>
+      <button class="button primary full" type="submit">加入髮型助理名單</button>
+    </form>
+  </section></div>`;
+}
+
+function assistantDeleteModal() {
+  const item = state.data.assistants.find(row => row.id === state.modal.assistantId && row.active !== false);
+  if (!item) return "";
+  return `<div class="modal-backdrop"><section class="modal confirmation-modal"><div class="modal-head"><div><p class="eyebrow">Remove Assistant</p><h2>刪除「${esc(item.name)}」？</h2></div><button class="icon-button" data-action="close-modal">×</button></div>
+    <p class="muted">刪除後，此髮型助理不會再出現在新消費選單；過往消費紀錄仍會保留其名稱。</p>
+    <div class="confirmation-actions"><button class="button ghost" type="button" data-action="close-modal">取消</button><button class="button danger" type="button" data-action="confirm-delete-assistant" data-id="${esc(item.id)}">確認刪除</button></div>
+  </section></div>`;
+}
+
 function memberModal() {
   return `<div class="modal-backdrop"><section class="modal"><div class="modal-head"><div><p class="eyebrow">Hong Kong Member</p><h2>新增會員</h2></div><button class="icon-button" data-action="close-modal">×</button></div>
     <form id="member-form" class="form-grid">
@@ -371,8 +395,12 @@ function saleModal() {
   const members = state.data.profiles.filter(item => item.role === "member");
   const selectedMember = state.modal.memberId || members[0]?.id;
   const balance = memberBalance(selectedMember);
+  const appointment = state.data.appointments.find(item => item.id === state.modal.appointmentId && item.member_id === selectedMember);
+  const stylists = activeStylistItems();
+  const assistants = activeAssistantItems();
+  const selectedStylist = state.modal.stylistId || appointment?.stylist_id || stylists[0]?.id || "";
+  const selectedAssistant = state.modal.assistantId || "";
   if (!state.saleItems.length) {
-    const appointment = state.data.appointments.find(item => item.id === state.modal.appointmentId);
     const catalog = activeCatalogItems();
     const initial = catalog.find(item => item.id === appointment?.service_id) || catalog[0];
     if (initial) state.saleItems = [catalogToSaleItem(initial)];
@@ -382,13 +410,15 @@ function saleModal() {
     <form id="sale-form">
       <div class="form-grid">
         <label class="field"><span>會員</span><select name="memberId" id="sale-member">${members.map(item => `<option value="${item.id}" ${item.id===selectedMember?"selected":""}>${esc(item.name)} · ${esc(item.phone||item.email)}</option>`).join("")}</select></label>
-        <label class="field"><span>相關預約（選填）</span><select name="appointmentId"><option value="">沒有</option>${state.data.appointments.filter(item=>item.member_id===selectedMember && ["confirmed","pending"].includes(item.status)).map(item=>`<option value="${item.id}">${formatDateTime(item.start_at)} · ${serviceName(item.service_id)}</option>`).join("")}</select></label>
+        <label class="field"><span>相關預約（選填）</span><select name="appointmentId" id="sale-appointment"><option value="">沒有</option>${state.data.appointments.filter(item=>item.member_id===selectedMember && ["confirmed","pending"].includes(item.status)).map(item=>`<option value="${item.id}" ${item.id===state.modal.appointmentId?"selected":""}>${formatDateTime(item.start_at)} · ${serviceName(item.service_id)}</option>`).join("")}</select></label>
+        <label class="field"><span>是次跟進髮型師</span><select name="stylistId" id="sale-stylist" required>${stylists.map(item => `<option value="${item.id}" ${item.id===selectedStylist?"selected":""}>${esc(item.name)}</option>`).join("")}</select></label>
+        <label class="field"><span>是次跟進髮型助理（選填）</span><select name="assistantId" id="sale-assistant"><option value="">沒有／不適用</option>${assistants.map(item => `<option value="${item.id}" ${item.id===selectedAssistant?"selected":""}>${esc(item.name)}</option>`).join("")}</select></label>
       </div>
       <div class="card-head"><h3>消費項目</h3><button class="button ghost small" type="button" data-action="add-sale-item">＋ 新增項目</button></div>
       <div id="sale-items" class="list">${state.saleItems.map((item,index)=>saleItemRow(item,index)).join("")}</div>
       <label class="field"><span>使用印花（現有 ${balance} 個；新印花不能用於同一張單）</span><select name="requestedRedemption" id="sale-redemption"><option value="0">不使用</option>${balance>=4?`<option value="4" ${state.modal.redemption===4?"selected":""}>4個印花・全單9折</option>`:""}${balance>=8?`<option value="8" ${state.modal.redemption===8?"selected":""}>8個印花・全單85折</option>`:""}</select></label>
       <div class="sale-summary"><div><span>原價</span><strong>${formatMoney(summary.subtotal)}</strong></div><div><span>${summary.discountLabel}</span><strong>−${formatMoney(summary.discount)}</strong></div><div class="total"><span>實收</span><strong>${formatMoney(summary.finalAmount)}</strong></div><div><span>本次所得印花</span><strong>+${summary.earnedStamps}</strong></div></div>
-      <button class="button primary full" type="submit">完成付款及發放印花</button>
+      <button class="button primary full" type="submit" ${members.length && stylists.length && state.saleItems.length ? "" : "disabled"}>確認消費、付款及發放印花</button>
     </form>
   </section></div>`;
 }
@@ -436,13 +466,13 @@ function memberSaleHistory(items) {
     const itemNames = item.items.length
       ? item.items.map(line => `${esc(line.name)} ×${Number(line.quantity) || 1}`).join("、")
       : "未有項目明細";
-    return `<div class="list-item"><div class="list-item-main"><strong>${formatMoney(item.final_amount)}</strong><span>${formatDateTime(item.completed_at)} · ${itemNames}</span><span>${esc(item.discount_label || "沒有折扣")}</span></div><div class="list-item-side"><strong>${item.stamp_redeemed ? `−${item.stamp_redeemed}印花` : "已付款"}</strong></div></div>`;
+    return `<div class="list-item"><div class="list-item-main"><strong>${formatMoney(item.final_amount)}</strong><span>${formatDateTime(item.completed_at)} · ${itemNames}</span><span>跟進：${esc(saleTeamText(item))}</span><span>${esc(item.discount_label || "沒有折扣")}</span></div><div class="list-item-side"><strong>${item.stamp_redeemed ? `−${item.stamp_redeemed}印花` : "已付款"}</strong></div></div>`;
   }).join("")}</div>`;
 }
 
 function saleList(items, admin = false) {
   if (!items.length) return empty("暫時未有消費紀錄");
-  return `<div class="list">${items.map(item=>`<div class="list-item"><div class="list-item-main"><strong>${admin?`${memberName(item.member_id)} · `:""}${formatMoney(item.final_amount)}</strong><span>${formatDateTime(item.completed_at)} · ${esc(item.discount_label||"沒有折扣")}</span></div><div class="list-item-side"><strong>${item.stamp_redeemed?`−${item.stamp_redeemed}印花`:"已付款"}</strong></div></div>`).join("")}</div>`;
+  return `<div class="list">${items.map(item=>`<div class="list-item"><div class="list-item-main"><strong>${admin?`${memberName(item.member_id)} · `:""}${formatMoney(item.final_amount)}</strong><span>${formatDateTime(item.completed_at)} · ${esc(item.discount_label||"沒有折扣")}</span><span>跟進：${esc(saleTeamText(item))}</span></div><div class="list-item-side"><strong>${item.stamp_redeemed?`−${item.stamp_redeemed}印花`:"已付款"}</strong></div></div>`).join("")}</div>`;
 }
 
 function stampLedgerList(items, admin = false) {
@@ -456,6 +486,7 @@ function bindForms() {
   root.querySelector("#appointment-form")?.addEventListener("submit", onAdminAppointment);
   root.querySelector("#catalog-form")?.addEventListener("submit", onCatalogItem);
   root.querySelector("#stylist-form")?.addEventListener("submit", onStylist);
+  root.querySelector("#assistant-form")?.addEventListener("submit", onAssistant);
   root.querySelector("#booking-form")?.addEventListener("submit", onBooking);
   root.querySelector("#sale-form")?.addEventListener("submit", onSale);
   root.querySelector("#stamp-form")?.addEventListener("submit", onStampAdjustment);
@@ -464,7 +495,20 @@ function bindForms() {
   root.querySelector("#catalog-kind")?.addEventListener("change", updateCatalogDuration);
   root.querySelector("#member-search")?.addEventListener("input", filterMembers);
   root.querySelectorAll("[data-member-lookup-input]").forEach(input => input.addEventListener("input", updateMemberLookupResults));
-  root.querySelector("#sale-member")?.addEventListener("change", event => { state.modal.memberId = event.target.value; render(); });
+  root.querySelector("#sale-member")?.addEventListener("change", event => {
+    state.modal.memberId = event.target.value;
+    state.modal.appointmentId = null;
+    state.modal.stylistId = null;
+    render();
+  });
+  root.querySelector("#sale-appointment")?.addEventListener("change", event => {
+    state.modal.appointmentId = event.target.value || null;
+    const appointment = state.data.appointments.find(item => item.id === state.modal.appointmentId);
+    if (appointment) state.modal.stylistId = appointment.stylist_id;
+    render();
+  });
+  root.querySelector("#sale-stylist")?.addEventListener("change", event => { state.modal.stylistId = event.target.value; });
+  root.querySelector("#sale-assistant")?.addEventListener("change", event => { state.modal.assistantId = event.target.value || null; });
   root.querySelector("#sale-redemption")?.addEventListener("change", event => { state.modal.redemption = Number(event.target.value); render(); });
   root.querySelectorAll("[data-sale-field]").forEach(input => input.addEventListener("change", updateSaleItem));
   root.querySelectorAll("[data-sale-catalog]").forEach(input => input.addEventListener("change", updateSaleCatalog));
@@ -496,7 +540,10 @@ root.addEventListener("click", async event => {
     if (action === "new-stylist") { state.modal={type:"stylist"}; render(); }
     if (action === "delete-stylist") { state.modal={type:"stylist-delete",stylistId:target.dataset.id}; render(); }
     if (action === "confirm-delete-stylist") { await api.deleteStylist(target.dataset.id); state.modal=null; toast("髮型師已從新預約選單移除。"); await refresh(); }
-    if (["new-sale","sale-member","sale-from-appointment"].includes(action)) { state.modal={type:"sale",memberId:target.dataset.member||null,appointmentId:target.dataset.id||null,redemption:0}; state.saleItems=[]; render(); }
+    if (action === "new-assistant") { state.modal={type:"assistant"}; render(); }
+    if (action === "delete-assistant") { state.modal={type:"assistant-delete",assistantId:target.dataset.id}; render(); }
+    if (action === "confirm-delete-assistant") { await api.deleteAssistant(target.dataset.id); state.modal=null; toast("髮型助理已從新消費選單移除。"); await refresh(); }
+    if (["new-sale","sale-member","sale-from-appointment"].includes(action)) { state.modal={type:"sale",memberId:target.dataset.member||null,appointmentId:target.dataset.id||null,stylistId:null,assistantId:null,redemption:0}; state.saleItems=[]; render(); }
     if (["adjust-stamps","stamps-member"].includes(action)) { state.modal={type:"stamps",memberId:target.dataset.member||null}; render(); }
     if (action === "add-sale-item") {
       const first=activeCatalogItems()[0];
@@ -576,6 +623,16 @@ async function onStylist(event) {
   });
 }
 
+async function onAssistant(event) {
+  event.preventDefault(); const form=Object.fromEntries(new FormData(event.currentTarget));
+  await busy(event.submitter, async()=>{
+    await api.createAssistant(form.name);
+    state.modal=null;
+    toast("新髮型助理已加入名單。");
+    await refresh();
+  });
+}
+
 async function onBooking(event) {
   event.preventDefault(); const form=Object.fromEntries(new FormData(event.currentTarget));
   await busy(event.submitter, async()=>{ await api.createAppointment({...form,memberId:state.profile.id}); toast("預約已提交，待管理員確認。"); state.view="appointments"; await refresh(); });
@@ -583,7 +640,7 @@ async function onBooking(event) {
 
 async function onSale(event) {
   event.preventDefault(); const form=Object.fromEntries(new FormData(event.currentTarget));
-  await busy(event.submitter, async()=>{ await api.completeSale({memberId:form.memberId,appointmentId:form.appointmentId||state.modal.appointmentId,items:state.saleItems,requestedRedemption:Number(form.requestedRedemption),adminId:state.profile.id}); state.modal=null; state.saleItems=[]; toast("消費及印花已記錄。"); await refresh(); });
+  await busy(event.submitter, async()=>{ await api.completeSale({memberId:form.memberId,appointmentId:form.appointmentId||state.modal.appointmentId,stylistId:form.stylistId,assistantId:form.assistantId||null,items:state.saleItems,requestedRedemption:Number(form.requestedRedemption),adminId:state.profile.id}); state.modal=null; state.saleItems=[]; toast("消費、跟進人員及印花已記錄。"); await refresh(); });
 }
 
 async function onStampAdjustment(event) {
@@ -633,6 +690,7 @@ function catalogOptions(selectedId){
 
 function activeCatalogItems() { return (state.data.catalog || []).filter(item => item.active !== false); }
 function activeStylistItems() { return (state.data.stylists || []).filter(item => item.active !== false); }
+function activeAssistantItems() { return (state.data.assistants || []).filter(item => item.active !== false); }
 
 function filterMembers(event) {
   const query=event.target.value.trim().toLowerCase();
@@ -706,6 +764,13 @@ function memberBalance(memberId) { return state.data.stamps.filter(item=>item.me
 function memberName(id) { return state.data.profiles?.find(item=>item.id===id)?.name || "會員"; }
 function serviceName(id) { return state.data.catalog?.find(item=>item.id===id)?.name || "服務"; }
 function stylistName(id) { return state.data.stylists?.find(item=>item.id===id)?.name || "髮型師"; }
+function assistantName(id) { return state.data.assistants?.find(item=>item.id===id)?.name || "髮型助理"; }
+function saleTeamText(item) {
+  const team = [];
+  if (item.stylist_id) team.push(`髮型師 ${stylistName(item.stylist_id)}`);
+  if (item.assistant_id) team.push(`髮型助理 ${assistantName(item.assistant_id)}`);
+  return team.length ? team.join("、") : "未記錄";
+}
 function statusClass(status) { return status.replace("_","-"); }
 function stampType(type) { return ({spending:"消費印花",birthday:"生日獎賞",referral:"介紹朋友",redemption:"兌換優惠",admin_adjustment:"管理員調整"})[type]||type; }
 function statCard(label,value,hint){return `<section class="card stat"><span class="label">${label}</span><strong class="value">${value}</strong><span class="hint">${hint}</span></section>`;}

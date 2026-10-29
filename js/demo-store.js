@@ -120,13 +120,14 @@ export class DemoStore {
   async getProfile() { return this.data.profiles.find(item => item.id === this.session?.user?.id) || null; }
   async getCatalog() { return this.data.catalog.filter(item => item.active !== false); }
   async getStylists() { return this.data.stylists.filter(item => item.active !== false); }
+  async getAssistants() { return this.data.assistants.filter(item => item.active !== false); }
   stampBalance(memberId) { return this.data.stampLedger.filter(item => item.member_id === memberId).reduce((sum, item) => sum + item.delta, 0); }
 
   async getMemberDashboard(memberId) {
     const appointments = this.data.appointments.filter(item => item.member_id === memberId).sort(byNewest("start_at"));
     const sales = this.data.sales.filter(item => item.member_id === memberId).sort(byNewest("completed_at"));
     const stamps = this.data.stampLedger.filter(item => item.member_id === memberId).sort(byNewest("created_at"));
-    return { appointments, sales, stamps, balance: this.stampBalance(memberId), catalog: await this.getCatalog(), stylists: await this.getStylists() };
+    return { appointments, sales, stamps, balance: this.stampBalance(memberId), catalog: await this.getCatalog(), stylists: await this.getStylists(), assistants: await this.getAssistants() };
   }
 
   async createAppointment({ memberId, stylistId, serviceId, date, time, note, status = "pending" }) {
@@ -214,6 +215,28 @@ export class DemoStore {
     this.save(); return item;
   }
 
+  async createAssistant(name) {
+    const actor = this.actor();
+    const assistantName = String(name || "").trim();
+    if (!assistantName) throw new Error("請輸入髮型助理名稱。");
+    if (this.data.assistants.some(item => item.active !== false && item.name.trim().toLowerCase() === assistantName.toLowerCase())) throw new Error("此髮型助理名稱已存在。");
+    const row = { id: this.id("assistant"), name: assistantName, active: true, created_by: actor.id, created_at: new Date().toISOString() };
+    this.data.assistants.push(row);
+    this.audit({ action: "assistant.created", label: "新增髮型助理", targetType: "髮型助理", targetId: row.id, summary: row.name });
+    this.save(); return row;
+  }
+
+  async deleteAssistant(id) {
+    const actor = this.actor();
+    const item = this.data.assistants.find(row => row.id === id && row.active !== false);
+    if (!item) throw new Error("找不到髮型助理。");
+    item.active = false;
+    item.deleted_by = actor.id;
+    item.deleted_at = new Date().toISOString();
+    this.audit({ action: "assistant.deleted", label: "刪除髮型助理", targetType: "髮型助理", targetId: item.id, summary: item.name });
+    this.save(); return item;
+  }
+
   async cancelAppointment(id, memberId) {
     const actor = this.actor();
     const item = this.data.appointments.find(a => a.id === id && a.member_id === memberId);
@@ -234,6 +257,7 @@ export class DemoStore {
       auditLog: [...this.data.auditLog].sort(byNewest("created_at")),
       catalog: [...this.data.catalog].sort((a,b) => Number(a.sort_order || 0) - Number(b.sort_order || 0)),
       stylists: [...this.data.stylists].sort((a,b) => a.name.localeCompare(b.name, "zh-HK")),
+      assistants: [...this.data.assistants].sort((a,b) => a.name.localeCompare(b.name, "zh-HK")),
       settings: [
         { key: "business_hours", value: { open: "11:00", close: "21:00", days: [1,2,3,4,5,6,0] } },
         { key: "stamp_rules", value: { threshold: 600, four_stamp_discount: 0.10, eight_stamp_discount: 0.15, product_member_discount: 0.05 } }
@@ -263,13 +287,19 @@ export class DemoStore {
     this.save(); return row;
   }
 
-  async completeSale({ memberId, appointmentId, items, requestedRedemption, adminId }) {
+  async completeSale({ memberId, appointmentId, stylistId, assistantId, items, requestedRedemption, adminId }) {
     const actor = this.actor();
     const profile = this.data.profiles.find(item => item.id === memberId);
     if (!profile) throw new Error("找不到會員。");
+    const appointment = appointmentId ? this.data.appointments.find(item => item.id === appointmentId && item.member_id === memberId) : null;
+    const selectedStylistId = stylistId || appointment?.stylist_id;
+    const stylist = this.data.stylists.find(item => item.id === selectedStylistId && item.active !== false);
+    if (!stylist) throw new Error("請選擇有效髮型師。");
+    const assistant = assistantId ? this.data.assistants.find(item => item.id === assistantId && item.active !== false) : null;
+    if (assistantId && !assistant) throw new Error("請選擇有效髮型助理。");
     const existingBalance = this.stampBalance(memberId);
     const summary = calculateSale(items, existingBalance, requestedRedemption);
-    const sale = { id: this.id("sale"), member_id: memberId, appointment_id: appointmentId || null, subtotal: summary.subtotal, discount: summary.discount, final_amount: summary.finalAmount, discount_label: summary.discountLabel, stamp_redeemed: summary.redemption.stamps, completed_by: actor.id, completed_at: new Date().toISOString() };
+    const sale = { id: this.id("sale"), member_id: memberId, appointment_id: appointmentId || null, stylist_id: stylist.id, assistant_id: assistant?.id || null, subtotal: summary.subtotal, discount: summary.discount, final_amount: summary.finalAmount, discount_label: summary.discountLabel, stamp_redeemed: summary.redemption.stamps, completed_by: actor.id, completed_at: new Date().toISOString() };
     this.data.sales.push(sale);
     for (const item of items) this.data.saleItems.push({ id: this.id("line"), sale_id: sale.id, kind: item.kind, name: item.name, quantity: Number(item.quantity), unit_price: Number(item.unitPrice) });
     if (summary.redemption.stamps) this.data.stampLedger.push({ id: this.id("stamp"), member_id: memberId, delta: -summary.redemption.stamps, type: "redemption", reason: summary.discountLabel, sale_id: sale.id, created_by: actor.id, created_at: sale.completed_at });
@@ -283,10 +313,9 @@ export class DemoStore {
       this.data.stampLedger.push({ id: this.id("stamp"), member_id: referral.referrer_id, delta: 1, type: "referral", reason: `成功介紹 ${profile.name}`, sale_id: sale.id, created_by: actor.id, created_at: sale.completed_at });
     }
     if (appointmentId) {
-      const appointment = this.data.appointments.find(item => item.id === appointmentId);
       if (appointment) appointment.status = "completed";
     }
-    this.audit({ action: "sale.completed", label: "完成消費", targetType: "消費", targetId: sale.id, summary: `${profile.name} · 實收 HK$${summary.finalAmount}` });
+    this.audit({ action: "sale.completed", label: "完成消費", targetType: "消費", targetId: sale.id, summary: `${profile.name} · 髮型師 ${stylist.name}${assistant ? ` · 助理 ${assistant.name}` : ""} · 實收 HK$${summary.finalAmount}` });
     this.save(); return { sale, summary, balance: this.stampBalance(memberId) };
   }
 }
@@ -321,6 +350,7 @@ function bytesHex(bytes) { return Array.from(bytes, byte => byte.toString(16).pa
 function migrateData(data, accounts) {
   data.auditLog = Array.isArray(data.auditLog) ? data.auditLog : [];
   data.saleItems = Array.isArray(data.saleItems) ? data.saleItems : [];
+  data.assistants = Array.isArray(data.assistants) ? data.assistants : [];
   data.referrals = Array.isArray(data.referrals) ? data.referrals : [];
   data.stampLedger = Array.isArray(data.stampLedger) ? data.stampLedger : [];
   const firstAccount = Object.entries(accounts)[0];
@@ -338,6 +368,11 @@ function migrateData(data, accounts) {
       if (item.deleted_by === "admin-1") item.deleted_by = replacementId;
     }
     for (const item of data.stylists || []) {
+      if (item.active === undefined) item.active = true;
+      if (item.created_by === "admin-1") item.created_by = replacementId;
+      if (item.deleted_by === "admin-1") item.deleted_by = replacementId;
+    }
+    for (const item of data.assistants) {
       if (item.active === undefined) item.active = true;
       if (item.created_by === "admin-1") item.created_by = replacementId;
       if (item.deleted_by === "admin-1") item.deleted_by = replacementId;
@@ -376,6 +411,10 @@ function seedData(accounts) {
       { id: "sty-a", name: "Hair Stylist A", active: true },
       { id: "sty-b", name: "Hair Stylist B", active: true },
       { id: "sty-c", name: "Hair Stylist C", active: true }
+    ],
+    assistants: [
+      { id: "assistant-a", name: "Hair Assistant A", active: true },
+      { id: "assistant-b", name: "Hair Assistant B", active: true }
     ],
     catalog: [
       { id: "svc-cut", name: "洗剪吹", kind: "service", price: 280, duration_minutes: 60, active: true },

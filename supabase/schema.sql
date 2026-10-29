@@ -39,6 +39,13 @@ create table if not exists public.stylists (
   created_at timestamptz not null default now()
 );
 
+create table if not exists public.assistants (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  active boolean not null default true,
+  created_at timestamptz not null default now()
+);
+
 create table if not exists public.catalog (
   id uuid primary key default gen_random_uuid(),
   name text not null,
@@ -68,6 +75,8 @@ create table if not exists public.sales (
   id uuid primary key default gen_random_uuid(),
   member_id uuid not null references public.profiles(id),
   appointment_id uuid references public.appointments(id),
+  stylist_id uuid references public.stylists(id),
+  assistant_id uuid references public.assistants(id),
   subtotal numeric(10,2) not null check (subtotal >= 0),
   discount numeric(10,2) not null default 0 check (discount >= 0),
   final_amount numeric(10,2) not null check (final_amount >= 0),
@@ -76,6 +85,9 @@ create table if not exists public.sales (
   completed_by uuid not null references public.profiles(id),
   completed_at timestamptz not null default now()
 );
+
+alter table public.sales add column if not exists stylist_id uuid references public.stylists(id);
+alter table public.sales add column if not exists assistant_id uuid references public.assistants(id);
 
 create table if not exists public.sale_items (
   id uuid primary key default gen_random_uuid(),
@@ -279,19 +291,39 @@ begin
   return result;
 end $$;
 
-create or replace function public.complete_sale(p_member_id uuid,p_appointment_id uuid,p_items jsonb,p_redeem_stamps integer default 0)
+drop function if exists public.complete_sale(uuid,uuid,jsonb,integer);
+create or replace function public.complete_sale(
+  p_member_id uuid,
+  p_appointment_id uuid,
+  p_items jsonb,
+  p_redeem_stamps integer default 0,
+  p_stylist_id uuid default null,
+  p_assistant_id uuid default null
+)
 returns jsonb language plpgsql security definer set search_path = public
 as $$
 declare
   v_subtotal numeric(10,2); v_product numeric(10,2); v_discount numeric(10,2); v_final numeric(10,2);
   v_balance integer; v_earned integer; v_label text; v_sale public.sales; v_item jsonb;
   v_profile public.profiles; v_year integer; v_ref public.referrals;
+  v_stylist_id uuid := p_stylist_id; v_appointment_stylist_id uuid;
 begin
   if not public.is_admin() then raise exception '只有管理員可完成消費'; end if;
   if p_redeem_stamps not in (0,4,8) then raise exception '印花兌換只可選0、4或8'; end if;
   if jsonb_typeof(p_items) <> 'array' or jsonb_array_length(p_items) = 0 then raise exception '消費必須最少有一個項目'; end if;
   select * into v_profile from public.profiles where id=p_member_id and role='member' and active;
   if not found then raise exception '找不到有效會員'; end if;
+  if p_appointment_id is not null then
+    select stylist_id into v_appointment_stylist_id from public.appointments where id=p_appointment_id and member_id=p_member_id;
+    if not found then raise exception '找不到此會員的相關預約'; end if;
+  end if;
+  v_stylist_id:=coalesce(v_stylist_id,v_appointment_stylist_id);
+  perform 1 from public.stylists where id=v_stylist_id and active;
+  if not found then raise exception '請選擇有效髮型師'; end if;
+  if p_assistant_id is not null then
+    perform 1 from public.assistants where id=p_assistant_id and active;
+    if not found then raise exception '請選擇有效髮型助理'; end if;
+  end if;
   select coalesce(sum(delta),0)::integer into v_balance from public.stamp_ledger where member_id=p_member_id;
   if p_redeem_stamps > v_balance then raise exception '印花結餘不足'; end if;
   select round(coalesce(sum((x->>'quantity')::integer*(x->>'unit_price')::numeric),0),2),
@@ -303,8 +335,8 @@ begin
   elsif v_product>0 then v_discount:=round(v_product*.05,2);v_label:='會員產品95折';
   else v_discount:=0;v_label:='沒有折扣'; end if;
   v_final:=round(v_subtotal-v_discount,2); v_earned:=floor(v_final/600)::integer;
-  insert into public.sales(member_id,appointment_id,subtotal,discount,final_amount,discount_label,stamp_redeemed,completed_by)
-  values(p_member_id,p_appointment_id,v_subtotal,v_discount,v_final,v_label,p_redeem_stamps,auth.uid()) returning * into v_sale;
+  insert into public.sales(member_id,appointment_id,stylist_id,assistant_id,subtotal,discount,final_amount,discount_label,stamp_redeemed,completed_by)
+  values(p_member_id,p_appointment_id,v_stylist_id,p_assistant_id,v_subtotal,v_discount,v_final,v_label,p_redeem_stamps,auth.uid()) returning * into v_sale;
   for v_item in select * from jsonb_array_elements(p_items) loop
     insert into public.sale_items(sale_id,kind,name,quantity,unit_price) values(v_sale.id,(v_item->>'kind')::public.catalog_kind,v_item->>'name',(v_item->>'quantity')::integer,(v_item->>'unit_price')::numeric);
   end loop;
@@ -323,6 +355,7 @@ end $$;
 
 alter table public.profiles enable row level security;
 alter table public.stylists enable row level security;
+alter table public.assistants enable row level security;
 alter table public.catalog enable row level security;
 alter table public.appointments enable row level security;
 alter table public.sales enable row level security;
@@ -341,6 +374,10 @@ drop policy if exists stylists_read on public.stylists;
 create policy stylists_read on public.stylists for select to authenticated using(public.is_admin());
 drop policy if exists stylists_admin on public.stylists;
 create policy stylists_admin on public.stylists for all to authenticated using(public.is_admin()) with check(public.is_admin());
+drop policy if exists assistants_read on public.assistants;
+create policy assistants_read on public.assistants for select to authenticated using(public.is_admin());
+drop policy if exists assistants_admin on public.assistants;
+create policy assistants_admin on public.assistants for all to authenticated using(public.is_admin()) with check(public.is_admin());
 drop policy if exists catalog_read on public.catalog;
 create policy catalog_read on public.catalog for select to authenticated using(public.is_admin());
 drop policy if exists catalog_admin on public.catalog;
@@ -373,9 +410,10 @@ create policy settings_admin on public.settings for all to authenticated using(p
 grant select on public.member_stamp_balances to authenticated;
 grant execute on function public.create_member(text,text,text,date,uuid) to authenticated;
 grant execute on function public.adjust_stamps(uuid,integer,text) to authenticated;
-grant execute on function public.complete_sale(uuid,uuid,jsonb,integer) to authenticated;
+grant execute on function public.complete_sale(uuid,uuid,jsonb,integer,uuid,uuid) to authenticated;
 
 insert into public.stylists(name) select x from unnest(array['Hair Stylist A','Hair Stylist B','Hair Stylist C']) x where not exists(select 1 from public.stylists);
+insert into public.assistants(name) select x from unnest(array['Hair Assistant A','Hair Assistant B']) x where not exists(select 1 from public.assistants);
 insert into public.catalog(name,kind,price,duration_minutes,sort_order)
 select * from (values
   ('洗剪吹','service'::public.catalog_kind,280,60,10),('單剪','service',180,30,20),('洗吹造型','service',180,60,30),

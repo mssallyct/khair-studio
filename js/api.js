@@ -46,16 +46,21 @@ export class KhairApi {
     return this.rest(`/stylists?active=eq.true&order=name.asc&select=*`);
   }
 
+  async getAssistants() {
+    if (this.demoMode) return this.demo.getAssistants();
+    return this.rest(`/assistants?active=eq.true&order=name.asc&select=*`);
+  }
+
   async getMemberDashboard(memberId) {
     if (this.demoMode) return this.demo.getMemberDashboard(memberId);
-    const [appointments, sales, stamps, catalog, stylists, balanceRows] = await Promise.all([
+    const [appointments, sales, stamps, catalog, stylists, assistants, balanceRows] = await Promise.all([
       this.rest(`/appointments?member_id=eq.${memberId}&order=start_at.desc&select=*`),
       this.rest(`/sales?member_id=eq.${memberId}&order=completed_at.desc&select=*`),
       this.rest(`/stamp_ledger?member_id=eq.${memberId}&order=created_at.desc&select=*`),
-      this.getCatalog(), this.getStylists(),
+      this.getCatalog(), this.getStylists(), this.getAssistants(),
       this.rest(`/member_stamp_balances?member_id=eq.${memberId}&select=balance`)
     ]);
-    return { appointments, sales, stamps, catalog, stylists, balance: Number(balanceRows[0]?.balance || 0) };
+    return { appointments, sales, stamps, catalog, stylists, assistants, balance: Number(balanceRows[0]?.balance || 0) };
   }
 
   async createAppointment({ memberId, stylistId, serviceId, date, time, note, status = "pending" }) {
@@ -98,6 +103,18 @@ export class KhairApi {
     return rows[0];
   }
 
+  async createAssistant(name) {
+    if (this.demoMode) return this.demo.createAssistant(name);
+    const rows = await this.rest(`/assistants`, { method: "POST", body: { name: String(name || "").trim(), active: true }, prefer: "return=representation" });
+    return rows[0];
+  }
+
+  async deleteAssistant(id) {
+    if (this.demoMode) return this.demo.deleteAssistant(id);
+    const rows = await this.rest(`/assistants?id=eq.${encodeURIComponent(id)}`, { method: "PATCH", body: { active: false }, prefer: "return=representation" });
+    return rows[0];
+  }
+
   async cancelAppointment(id, memberId) {
     if (this.demoMode) return this.demo.cancelAppointment(id, memberId);
     const rows = await this.rest(`/appointments?id=eq.${id}&member_id=eq.${memberId}`, { method: "PATCH", body: { status: "cancelled" }, prefer: "return=representation" });
@@ -106,17 +123,17 @@ export class KhairApi {
 
   async getAdminDashboard() {
     if (this.demoMode) return this.demo.getAdminDashboard();
-    const [profiles, appointments, sales, saleItems, stamps, referrals, catalog, stylists, settings] = await Promise.all([
+    const [profiles, appointments, sales, saleItems, stamps, referrals, catalog, stylists, assistants, settings] = await Promise.all([
       this.rest(`/profiles?order=created_at.desc&select=*`),
       this.rest(`/appointments?order=start_at.desc&select=*`),
       this.rest(`/sales?order=completed_at.desc&select=*`),
       this.rest(`/sale_items?select=*`),
       this.rest(`/stamp_ledger?order=created_at.desc&select=*`),
       this.rest(`/referrals?order=created_at.desc&select=*`),
-      this.rest(`/catalog?order=sort_order.asc&select=*`), this.rest(`/stylists?order=name.asc&select=*`),
+      this.rest(`/catalog?order=sort_order.asc&select=*`), this.rest(`/stylists?order=name.asc&select=*`), this.rest(`/assistants?order=name.asc&select=*`),
       this.rest(`/settings?order=key.asc&select=*`)
     ]);
-    return { profiles, appointments, sales, saleItems, stamps, referrals, auditLog: [], catalog, stylists, settings };
+    return { profiles, appointments, sales, saleItems, stamps, referrals, auditLog: [], catalog, stylists, assistants, settings };
   }
 
   async createMember({ name, phone, email, birthday, referrerId, adminId }) {
@@ -141,9 +158,9 @@ export class KhairApi {
     return this.rpc("adjust_stamps", { p_member_id: memberId, p_delta: Number(delta), p_reason: reason });
   }
 
-  async completeSale({ memberId, appointmentId, items, requestedRedemption, adminId }) {
-    if (this.demoMode) return this.demo.completeSale({ memberId, appointmentId, items, requestedRedemption, adminId });
-    return this.rpc("complete_sale", { p_member_id: memberId, p_appointment_id: appointmentId || null, p_items: items.map(item => ({ kind: item.kind, name: item.name, quantity: Number(item.quantity), unit_price: Number(item.unitPrice) })), p_redeem_stamps: Number(requestedRedemption) || 0 });
+  async completeSale({ memberId, appointmentId, stylistId, assistantId, items, requestedRedemption, adminId }) {
+    if (this.demoMode) return this.demo.completeSale({ memberId, appointmentId, stylistId, assistantId, items, requestedRedemption, adminId });
+    return this.rpc("complete_sale", { p_member_id: memberId, p_appointment_id: appointmentId || null, p_items: items.map(item => ({ kind: item.kind, name: item.name, quantity: Number(item.quantity), unit_price: Number(item.unitPrice) })), p_redeem_stamps: Number(requestedRedemption) || 0, p_stylist_id: stylistId, p_assistant_id: assistantId || null });
   }
 
   async rpc(name, body) { return this.rest(`/rpc/${name}`, { method: "POST", body, prefer: "return=representation" }); }
