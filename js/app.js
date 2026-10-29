@@ -2,6 +2,7 @@ import { KhairApi } from "./api.js";
 import { APPOINTMENT_LABELS, calculateSale, formatDateTime, formatMoney, generateTimeSlots } from "./rules.js";
 import { downloadAdminWorkbook } from "./excel-export.js";
 import { findMembersByPhone, normalizePhoneSearch } from "./member-search.js";
+import { buildMemberDetail } from "./member-detail.js";
 
 const api = new KhairApi(window.KHAIR_CONFIG || {});
 const root = document.querySelector("#app");
@@ -14,6 +15,7 @@ const state = {
   view: "dashboard",
   loading: false,
   modal: null,
+  selectedMemberId: null,
   saleItems: []
 };
 
@@ -104,7 +106,7 @@ function renderApp() {
 }
 
 function viewTitle() {
-  const map = { dashboard: "今日狀況", book: "預約服務", appointments: state.profile.role === "admin" ? "預約管理" : "我的預約", rewards: "電子印花", profile: "會員資料", members: "會員管理", sales: "消費及印花", settings: "服務設定", audit: "操作記錄" };
+  const map = { dashboard: "今日狀況", book: "預約服務", appointments: state.profile.role === "admin" ? "預約管理" : "我的預約", rewards: "電子印花", profile: "會員資料", members: "會員管理", "member-detail": "會員資料", sales: "消費及印花", settings: "服務設定", audit: "操作記錄" };
   return map[state.view] || "K.Hair Studio";
 }
 
@@ -179,6 +181,7 @@ function renderProfile() {
 
 function renderAdminView() {
   if (state.view === "appointments") return renderAdminAppointments();
+  if (state.view === "member-detail") return renderMemberDetail();
   if (state.view === "members") return renderMembers();
   if (state.view === "sales") return renderSales();
   if (state.view === "settings") return renderSettings();
@@ -216,6 +219,42 @@ function renderMembers() {
     <div class="filter-bar"><input id="member-search" placeholder="搜尋姓名、電話或電郵"></div>
     <div class="table-wrap"><table><thead><tr><th>會員</th><th>電話</th><th>生日</th><th>印花</th><th>介紹編號</th><th>操作</th></tr></thead><tbody id="member-table-body">${members.map(memberRow).join("")}</tbody></table></div>
   </section>`;
+}
+
+function renderMemberDetail() {
+  const detail = buildMemberDetail(state.data, state.selectedMemberId);
+  if (!detail) return `<section class="card"><button class="text-button" data-view="members">← 返回會員名單</button>${empty("找不到此會員資料")}</section>`;
+  const { member, appointments, sales, stamps, balance, totalSpend, referrer, referredMembers, rewardedReferralCount } = detail;
+  const memberSince = member.created_at ? formatDateTime(member.created_at) : "—";
+  const referralNames = referredMembers.length ? referredMembers.map(item => item.name).join("、") : "未有介紹會員";
+  return `<div class="grid member-detail-page">
+    <section class="card member-profile-hero">
+      <button class="text-button member-back" data-view="members">← 返回會員名單</button>
+      <div class="member-profile-heading">
+        <div><p class="eyebrow">Member Profile</p><h2>${esc(member.name)}</h2><p class="muted">${esc(member.phone || "未有電話")} · ${esc(member.email || "未有電郵")}</p></div>
+        <div class="actions member-profile-actions"><button class="button gold" data-action="sale-member" data-member="${esc(member.id)}">＋ 新增消費</button><button class="button ghost" data-action="stamps-member" data-member="${esc(member.id)}">調整印花</button></div>
+      </div>
+    </section>
+    <div class="grid cols-4">
+      ${statCard("現有印花", balance, balance >= 8 ? "可享85折" : balance >= 4 ? "可享9折" : `尚欠${Math.max(0, 4 - balance)}個享9折`)}
+      ${statCard("累積消費", formatMoney(totalSpend), `${sales.length} 宗消費紀錄`)}
+      ${statCard("預約紀錄", appointments.length, "包括待確認及已完成")}
+      ${statCard("介紹會員", referredMembers.length, `${rewardedReferralCount} 位已消費並獲印花`)}
+    </div>
+    <div class="grid cols-2">
+      <section class="card"><div class="card-head"><h2>基本資料</h2><span class="badge active">有效會員</span></div><div class="list">
+        ${profileRow("姓名", member.name)}${profileRow("電話", member.phone || "—")}${profileRow("電郵", member.email || "—")}${profileRow("生日", member.birthday || "—")}${profileRow("會員編號", member.referral_code || "—")}${profileRow("加入日期", memberSince)}
+      </div></section>
+      <section class="card"><div class="card-head"><h2>介紹紀錄</h2></div><div class="list">
+        ${profileRow("介紹人", referrer ? `${referrer.name} · ${referrer.phone || "未有電話"}` : "沒有介紹人")}${profileRow("已介紹會員人數", String(referredMembers.length))}${profileRow("已獲介紹印花", String(rewardedReferralCount))}${profileRow("已介紹會員", referralNames)}
+      </div></section>
+    </div>
+    <div class="grid cols-2">
+      <section class="card"><div class="card-head"><h2>消費紀錄</h2><button class="button small" data-action="sale-member" data-member="${esc(member.id)}">＋ 新增消費</button></div>${memberSaleHistory(sales)}</section>
+      <section class="card"><div class="card-head"><h2>預約紀錄</h2><span class="muted small">共 ${appointments.length} 項</span></div>${appointmentList(appointments, false)}</section>
+    </div>
+    <section class="card"><div class="card-head"><h2>印花紀錄</h2><button class="button ghost small" data-action="stamps-member" data-member="${esc(member.id)}">調整印花</button></div>${stampLedgerList(stamps)}</section>
+  </div>`;
 }
 
 function renderSales() {
@@ -388,7 +427,17 @@ function adminAppointmentTable(items) {
 }
 
 function memberRow(item) {
-  return `<tr data-member-search="${esc(`${item.name} ${item.phone || ""} ${item.email || ""}`.toLowerCase())}"><td><strong>${esc(item.name)}</strong><br><span class="muted small">${esc(item.email || "未有電郵")}</span></td><td>${esc(item.phone||"—")}</td><td>${esc(item.birthday||"—")}</td><td>${memberBalance(item.id)}</td><td>${esc(item.referral_code||"—")}</td><td><div class="actions"><button class="button ghost small" data-action="sale-member" data-member="${item.id}">消費</button><button class="button ghost small" data-action="stamps-member" data-member="${item.id}">印花</button></div></td></tr>`;
+  return `<tr data-member-search="${esc(`${item.name} ${item.phone || ""} ${item.email || ""}`.toLowerCase())}"><td><button class="member-link" data-action="view-member" data-member="${esc(item.id)}"><strong>${esc(item.name)}</strong><span>${esc(item.email || "未有電郵")}</span></button></td><td>${esc(item.phone||"—")}</td><td>${esc(item.birthday||"—")}</td><td>${memberBalance(item.id)}</td><td>${esc(item.referral_code||"—")}</td><td><div class="actions"><button class="button small" data-action="view-member" data-member="${esc(item.id)}">查看資料</button><button class="button ghost small" data-action="sale-member" data-member="${esc(item.id)}">消費</button><button class="button ghost small" data-action="stamps-member" data-member="${esc(item.id)}">印花</button></div></td></tr>`;
+}
+
+function memberSaleHistory(items) {
+  if (!items.length) return empty("暫時未有消費紀錄");
+  return `<div class="list">${items.map(item => {
+    const itemNames = item.items.length
+      ? item.items.map(line => `${esc(line.name)} ×${Number(line.quantity) || 1}`).join("、")
+      : "未有項目明細";
+    return `<div class="list-item"><div class="list-item-main"><strong>${formatMoney(item.final_amount)}</strong><span>${formatDateTime(item.completed_at)} · ${itemNames}</span><span>${esc(item.discount_label || "沒有折扣")}</span></div><div class="list-item-side"><strong>${item.stamp_redeemed ? `−${item.stamp_redeemed}印花` : "已付款"}</strong></div></div>`;
+  }).join("")}</div>`;
 }
 
 function saleList(items, admin = false) {
@@ -428,9 +477,10 @@ root.addEventListener("click", async event => {
   if (!target) return;
   const { action } = target.dataset;
   try {
+    if (action === "view-member") { state.selectedMemberId=target.dataset.member; state.view="member-detail"; closeMenu(); render(); return; }
     if (action === "select-member-lookup") { selectMemberLookup(target); return; }
     if (action === "clear-member-lookup") { clearMemberLookup(target); return; }
-    if (action === "logout") { await api.signOut(); Object.assign(state,{session:null,profile:null,data:null,view:"dashboard"}); render(); }
+    if (action === "logout") { await api.signOut(); Object.assign(state,{session:null,profile:null,data:null,view:"dashboard",selectedMemberId:null}); render(); }
     if (action === "refresh") await refresh();
     if (action === "export-data") { const fileName=downloadAdminWorkbook(state.data); toast(`${fileName} 已匯出。`); }
     if (action === "toggle-menu") document.querySelector("#sidebar")?.classList.toggle("open");

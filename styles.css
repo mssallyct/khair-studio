@@ -117,6 +117,17 @@ a { color: inherit; }
 .nav-item { width: 100%; border: 0; border-radius: 13px; padding: 12px 13px; display: flex; align-items: center; gap: 12px; color: rgba(255,255,255,.68); background: transparent; text-align: left; font-weight: 600; }
 .nav-item.active, .nav-item:hover { color: #fff; background: rgba(255,255,255,.1); }
 .nav-icon { width: 26px; text-align: center; font-size: 1.05rem; }
+.member-link { border: 0; padding: 0; color: var(--ink); background: transparent; text-align: left; cursor: pointer; }
+.member-link strong, .member-link span { display: block; }
+.member-link strong { text-decoration: underline; text-decoration-color: rgba(83,113,92,.35); text-underline-offset: 4px; }
+.member-link span { margin-top: 5px; color: #6f7772; font-size: .78rem; }
+.member-link:hover strong { color: var(--sage); text-decoration-color: var(--sage); }
+.member-profile-hero { padding: 26px 28px; background: linear-gradient(135deg, #fffdf8, #eee5d8); }
+.member-back { margin-bottom: 22px; }
+.member-profile-heading { display: flex; justify-content: space-between; align-items: flex-end; gap: 20px; }
+.member-profile-heading h2 { margin: 3px 0 8px; font-family: "Playfair Display", serif; font-size: clamp(2rem,4vw,3.25rem); }
+.member-profile-heading p { margin-bottom: 0; }
+.member-profile-actions { justify-content: flex-end; }
 .sidebar-user { margin-top: auto; padding: 15px; border: 1px solid rgba(255,255,255,.12); border-radius: 16px; background: rgba(255,255,255,.06); }
 .sidebar-user strong, .sidebar-user span { display: block; }
 .sidebar-user span { margin-top: 4px; color: rgba(255,255,255,.55); font-size: .75rem; word-break: break-all; }
@@ -241,4 +252,7 @@ td { font-size: .86rem; }
   .card, .hero-card { padding: 18px; border-radius: 18px; }
   .topbar-actions .button span { display: none; }
   .list-item { align-items: flex-start; }
+  .member-profile-heading { align-items: flex-start; flex-direction: column; }
+  .member-profile-actions { width: 100%; justify-content: flex-start; }
+  .member-profile-actions .button { flex: 1; }
 }
