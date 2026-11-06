@@ -276,7 +276,7 @@ export class DemoStore {
       assistants: [...this.data.assistants].sort((a,b) => a.name.localeCompare(b.name, "zh-HK")),
       settings: [
         { key: "business_hours", value: { open: "11:00", close: "21:00", days: [1,2,3,4,5,6,0] } },
-        { key: "stamp_rules", value: { threshold: 600, four_stamp_discount: 0.10, eight_stamp_discount: 0.15, product_member_discount: 0.05, same_sale_redemption: true, earning_basis: "final_amount", service_required: true } }
+        { key: "stamp_rules", value: { threshold: 600, four_stamp_discount: 0.10, eight_stamp_discount: 0.15, product_member_discount: 0.05, same_sale_redemption: true, earning_basis: "before_stamp_discount", service_required: true } }
       ]
     };
   }
@@ -324,7 +324,7 @@ export class DemoStore {
     const sale = { id: this.id("sale"), member_id: memberId, appointment_id: appointmentId || null, stylist_id: stylist.id, assistant_id: assistant?.id || null, subtotal: summary.subtotal, discount: summary.discount, final_amount: summary.finalAmount, discount_label: summary.discountLabel, stamp_redeemed: summary.redemption.stamps, completed_by: actor.id, completed_at: saleDate.toISOString() };
     this.data.sales.push(sale);
     for (const item of items) this.data.saleItems.push({ id: this.id("line"), sale_id: sale.id, kind: item.kind, name: item.name, quantity: Number(item.quantity), unit_price: Number(item.unitPrice) });
-    if (summary.earnedStamps) this.data.stampLedger.push({ id: this.id("stamp"), member_id: memberId, delta: summary.earnedStamps, type: "spending", reason: `消費 ${summary.finalAmount} 元`, sale_id: sale.id, created_by: actor.id, created_at: sale.completed_at });
+    if (summary.earnedStamps) this.data.stampLedger.push({ id: this.id("stamp"), member_id: memberId, delta: summary.earnedStamps, type: "spending", reason: `使用印花前計印花金額 HK$${summary.stampEarningAmount}；實收 HK$${summary.finalAmount}`, sale_id: sale.id, created_by: actor.id, created_at: sale.completed_at });
     const year = hongKongDateKey(saleDate).slice(0, 4);
     if (summary.bonusStamps) this.data.stampLedger.push({ id: this.id("stamp"), member_id: memberId, delta: 1, type: "birthday", reason: `${year} 生日月份獎賞`, sale_id: sale.id, created_by: actor.id, created_at: sale.completed_at });
     if (summary.redemption.stamps) this.data.stampLedger.push({ id: this.id("stamp"), member_id: memberId, delta: -summary.redemption.stamps, type: "redemption", reason: summary.discountLabel, sale_id: sale.id, created_by: actor.id, created_at: sale.completed_at });

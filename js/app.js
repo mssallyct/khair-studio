@@ -151,7 +151,7 @@ function stampCard() {
     <div class="card-head"><div><p class="eyebrow">Stamp Wallet</p><h2>${balance} 個電子印花</h2></div><strong>${balance >= 8 ? "可享85折" : balance >= 4 ? "可享9折" : `尚欠${remaining}個`}</strong></div>
     <div class="stamp-row">${Array.from({length:8}, (_,i) => `<div class="stamp ${i < display ? "filled" : ""}">${i < display ? "K" : i+1}</div>`).join("")}</div>
     <div class="progress-track"><div class="progress-bar" style="width:${Math.min(100, balance / nextTier * 100)}%"></div></div>
-    <p class="muted small">有做服務才計印花：服務＋產品折扣後實收每滿 HK$600 得1印，新印花可用於同一張單。4印9折、8印85折；淨產品消費不適用印花。</p>
+    <p class="muted small">有做服務才計印花：使用印花優惠前每滿 HK$600 得1印（產品按會員95折價計），新印花即時可用於同一張單。4印9折、8印85折；淨產品消費不適用印花。</p>
   </section>`;
 }
 
@@ -429,10 +429,10 @@ function saleModal() {
       </div>
       <div class="card-head"><h3>消費項目</h3><button class="button ghost small" type="button" data-action="add-sale-item">＋ 新增項目</button></div>
       <div id="sale-items" class="list">${state.saleItems.map((item,index)=>saleItemRow(item,index)).join("")}</div>
-      <label class="field"><span>使用印花（原有 ${balance} 個；${summary.stampEligible?"本單新印花亦可即時使用":"淨產品消費不適用印花"}）</span><select name="requestedRedemption" id="sale-redemption"><option value="0" ${!state.modal.redemption?"selected":""}>不使用</option>${[4,8].map(tier => `<option value="${tier}" ${state.modal.redemption===tier?"selected":""} ${summary.availableRedemptions.includes(tier)?"":"disabled"}>${tier}個印花・全單${tier===4?"9":"85"}折${summary.availableRedemptions.includes(tier)?"":summary.stampEligible?"（折扣後印花不足）":"（淨產品不適用）"}</option>`).join("")}</select></label>
-      <p class="muted small">有做服務：服務＋產品按折扣後實收每滿 HK$600 得 1 印，不足部分不累積，新印花可於本單使用。淨買產品只享會員95折，不發印花亦不兌換印花優惠。</p>
+      <label class="field"><span>使用印花（原有 ${balance} 個；${summary.stampEligible?`本次 +${summary.earnedStamps}${summary.bonusStamps?`＋生日獎賞 ${summary.bonusStamps}`:""}，本單可用 ${balance+summary.earnedStamps+summary.bonusStamps} 個`:"淨產品消費不適用印花"}）</span><select name="requestedRedemption" id="sale-redemption"><option value="0" ${!state.modal.redemption?"selected":""}>不使用</option>${[4,8].map(tier => `<option value="${tier}" ${state.modal.redemption===tier?"selected":""} ${summary.availableRedemptions.includes(tier)?"":"disabled"}>${tier}個印花・全單${tier===4?"9":"85"}折${summary.availableRedemptions.includes(tier)?"":summary.stampEligible?"（印花不足）":"（淨產品不適用）"}</option>`).join("")}</select></label>
+      <p class="muted small">先按使用印花優惠前的消費金額計印花（產品按會員95折價計），每滿 HK$600 得 1 印，不足部分不累積。本次新印花可立即於本單兌換，不會因兌換折扣而減少已計算的新印花。淨買產品只享會員95折，不發印花亦不兌換印花優惠。</p>
       ${summary.redemptionAllowed ? "" : `<p class="demo-note" role="alert">${esc(summary.redemptionError)}</p>`}
-      <div class="sale-summary"><div><span>原價</span><strong>${formatMoney(summary.subtotal)}</strong></div><div><span>${summary.discountLabel}</span><strong>−${formatMoney(summary.discount)}</strong></div><div class="total"><span>實收</span><strong>${formatMoney(summary.finalAmount)}</strong></div><div><span>本次消費所得印花</span><strong>+${summary.earnedStamps}</strong></div>${summary.bonusStamps?`<div><span>生日月份獎賞</span><strong>+${summary.bonusStamps}</strong></div>`:""}<div><span>本次使用印花</span><strong>−${summary.redemption.stamps}</strong></div><div><span>完成後印花結餘</span><strong>${summary.redemptionAllowed?summary.remainingStamps:"請重新選擇優惠"}</strong></div></div>
+      <div class="sale-summary"><div><span>原價</span><strong>${formatMoney(summary.subtotal)}</strong></div><div><span>${summary.discountLabel}</span><strong>−${formatMoney(summary.discount)}</strong></div><div class="total"><span>實收</span><strong>${formatMoney(summary.finalAmount)}</strong></div><div><span>計印花金額（使用印花優惠前）</span><strong>${summary.stampEligible?formatMoney(summary.stampEarningAmount):"不適用"}</strong></div><div><span>本次消費所得印花</span><strong>+${summary.earnedStamps}</strong></div>${summary.bonusStamps?`<div><span>生日月份獎賞</span><strong>+${summary.bonusStamps}</strong></div>`:""}<div><span>本次使用印花</span><strong>−${summary.redemption.stamps}</strong></div><div><span>完成後印花結餘</span><strong>${summary.redemptionAllowed?summary.remainingStamps:"請重新選擇優惠"}</strong></div></div>
       <button class="button primary full" type="submit" ${members.length && stylists.length && state.saleItems.length && summary.redemptionAllowed && summary.subtotal>0 ? "" : "disabled"}>確認消費、付款及發放印花</button>
     </form>
   </section></div>`;

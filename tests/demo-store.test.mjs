@@ -177,18 +177,20 @@ test("所有主要資料更新均記錄登入管理員", async () => {
   assert.match(store.data.auditLog.at(-1).summary, /Hair Stylist A.*Hair Assistant A/);
 });
 
-const serviceSale = {memberId:"member-1",stylistId:"sty-a",items:[{kind:"service",name:"護理",quantity:1,unitPrice:800}],requestedRedemption:4};
+const serviceSale = {memberId:"member-1",stylistId:"sty-a",items:[{kind:"service",name:"護理",quantity:1,unitPrice:600}],requestedRedemption:4};
 
 test("同一單先發印再扣印，重新載入後消費及營業額仍保留", async () => {
   localStorage.clear();
   const store = await createAuthenticatedStore();
   const result = await store.completeSale(serviceSale);
-  assert.equal(result.sale.final_amount,720);
+  assert.equal(result.sale.final_amount,540);
+  assert.equal(result.summary.stampEarningAmount,600);
   assert.equal(result.balance,0);
   assert.deepEqual(store.data.stampLedger.filter(row=>row.sale_id===result.sale.id).map(row=>row.delta),[1,-4]);
+  assert.match(store.data.stampLedger.find(row=>row.sale_id===result.sale.id && row.delta===1).reason,/使用印花前計印花金額 HK\$600；實收 HK\$540/);
   const reopened = createStore();
   const saved = (await reopened.getAdminDashboard()).sales.find(row=>row.id===result.sale.id);
-  assert.equal(saved.final_amount,720);
+  assert.equal(saved.final_amount,540);
   assert.equal(reopened.stampBalance("member-1"),0);
 });
 
@@ -196,7 +198,7 @@ test("不足印花拒絕整宗消費，不多發印花或紀錄營業額", async
   localStorage.clear();
   const store = await createAuthenticatedStore();
   const before = JSON.stringify(store.data);
-  await assert.rejects(()=>store.completeSale({...serviceSale,items:[{kind:"service",name:"護理",quantity:1,unitPrice:600}]}),/不足/);
+  await assert.rejects(()=>store.completeSale({...serviceSale,items:[{kind:"service",name:"護理",quantity:1,unitPrice:599.99}]}),/不足/);
   assert.equal(JSON.stringify(store.data),before);
 });
 

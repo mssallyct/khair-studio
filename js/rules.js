@@ -37,19 +37,23 @@ export function calculateSale(items, stampBalance = 0, requestedRedemption = 0, 
   const stampEligible = normalized.some(item => item.kind === "service" && item.quantity > 0);
   const balance = Math.max(0, Math.floor(Number(stampBalance) || 0));
   const bonusStamps = stampEligible && birthdayStamps === 1 && subtotal > 0 ? 1 : 0;
-  // Evaluate each tier using its OWN final amount. This avoids awarding stamps
-  // from the undiscounted price and then spending stamps the final bill did not earn.
+  // Earn once before redeeming this bill's stamps. The ordinary product member
+  // price is retained as the earning basis; redeeming stamps must not remove
+  // stamps that this checkout has just earned. Product-only bills earn none.
+  const subtotalCents = Math.round(subtotal * 100);
+  const ordinaryProductDiscountCents = Math.round(Math.round(productSubtotal * 100) * 5 / 100);
+  const stampEarningAmount = stampEligible ? Math.max(0, subtotalCents - ordinaryProductDiscountCents) / 100 : 0;
+  const earnedStamps = stampsFromAmount(stampEarningAmount);
   const quote = tier => {
     const redemption = redemptionForBalance(tier, tier);
-    const subtotalCents = Math.round(subtotal * 100);
-    const productDiscountCents = redemption.stamps ? 0 : Math.round(Math.round(productSubtotal * 100) * 5 / 100);
+    const productDiscountCents = redemption.stamps ? 0 : ordinaryProductDiscountCents;
     const discountCents = redemption.stamps ? Math.round(subtotalCents * (tier === 8 ? 15 : 10) / 100) : productDiscountCents;
     const productDiscount = productDiscountCents / 100;
     const discount = discountCents / 100;
     const finalAmount = Math.max(0, subtotalCents - discountCents) / 100;
-    return { redemption, discount, finalAmount, earnedStamps: stampEligible ? stampsFromAmount(finalAmount) : 0, discountLabel: redemption.stamps ? redemption.label : productDiscount > 0 ? "會員產品95折" : "沒有折扣" };
+    return { redemption, discount, finalAmount, discountLabel: redemption.stamps ? redemption.label : productDiscount > 0 ? "會員產品95折" : "沒有折扣" };
   };
-  const availableRedemptions = [4, 8].filter(tier => stampEligible && subtotal > 0 && balance + quote(tier).earnedStamps + bonusStamps >= tier);
+  const availableRedemptions = [4, 8].filter(tier => stampEligible && subtotal > 0 && balance + earnedStamps + bonusStamps >= tier);
   const requested = Number(requestedRedemption);
   const selected = quote([4, 8].includes(requested) ? requested : 0);
   const redemptionAllowed = requested === 0 || availableRedemptions.includes(requested);
@@ -58,11 +62,13 @@ export function calculateSale(items, stampBalance = 0, requestedRedemption = 0, 
     productSubtotal,
     ...selected,
     stampEligible,
+    stampEarningAmount,
+    earnedStamps,
     bonusStamps,
     availableRedemptions,
     redemptionAllowed,
-    redemptionError: redemptionAllowed ? "" : stampEligible ? "折扣後所得印花加現有結餘仍不足，請重新選擇印花優惠。" : "淨產品消費不適用印花優惠，請選擇不使用印花。",
-    remainingStamps: balance + selected.earnedStamps + bonusStamps - selected.redemption.stamps
+    redemptionError: redemptionAllowed ? "" : stampEligible ? "原有印花加本次消費所得印花仍不足，請重新選擇印花優惠。" : "淨產品消費不適用印花優惠，請選擇不使用印花。",
+    remainingStamps: balance + earnedStamps + bonusStamps - selected.redemption.stamps
   };
 }
 

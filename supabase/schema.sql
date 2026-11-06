@@ -305,7 +305,7 @@ create or replace function public.complete_sale(
 returns jsonb language plpgsql security definer set search_path = public
 as $$
 declare
-  v_subtotal numeric(10,2); v_product numeric(10,2); v_discount numeric(10,2); v_final numeric(10,2);
+  v_subtotal numeric(10,2); v_product numeric(10,2); v_discount numeric(10,2); v_final numeric(10,2); v_earning_amount numeric(10,2);
   v_balance integer; v_earned integer; v_label text; v_sale public.sales; v_item jsonb;
   v_profile public.profiles; v_year integer; v_ref public.referrals; v_birthday integer := 0;
   v_has_service boolean;
@@ -350,16 +350,17 @@ begin
   elsif v_product>0 then v_discount:=round(v_product*.05,2);v_label:='會員產品95折';
   else v_discount:=0;v_label:='沒有折扣'; end if;
   v_final:=round(v_subtotal-v_discount,2);
-  v_earned:=case when v_has_service then floor(v_final/600)::integer else 0 end;
-  -- Same-sale redemption uses stamps earned on the discounted final amount,
-  -- not the original price. Never commit a negative balance.
-  if p_redeem_stamps > v_balance + v_earned + v_birthday then raise exception '折扣後所得印花加現有結餘仍不足，請重新選擇印花優惠'; end if;
+  -- Earn before applying the stamp discount, retaining ordinary product member
+  -- pricing. Same-sale redemption must not undo the stamps just earned.
+  v_earning_amount:=case when v_has_service then round(v_subtotal-round(v_product*.05,2),2) else 0 end;
+  v_earned:=floor(v_earning_amount/600)::integer;
+  if p_redeem_stamps > v_balance + v_earned + v_birthday then raise exception '原有印花加本次消費所得印花仍不足，請重新選擇印花優惠'; end if;
   insert into public.sales(member_id,appointment_id,stylist_id,assistant_id,subtotal,discount,final_amount,discount_label,stamp_redeemed,completed_by)
   values(p_member_id,p_appointment_id,v_stylist_id,p_assistant_id,v_subtotal,v_discount,v_final,v_label,p_redeem_stamps,auth.uid()) returning * into v_sale;
   for v_item in select * from jsonb_array_elements(p_items) loop
     insert into public.sale_items(sale_id,kind,name,quantity,unit_price) values(v_sale.id,(v_item->>'kind')::public.catalog_kind,v_item->>'name',(v_item->>'quantity')::integer,(v_item->>'unit_price')::numeric);
   end loop;
-  if v_earned>0 then insert into public.stamp_ledger(member_id,delta,type,reason,sale_id,created_by) values(p_member_id,v_earned,'spending','消費 HK$'||trim(to_char(v_final,'999999990.00')),v_sale.id,auth.uid()); end if;
+  if v_earned>0 then insert into public.stamp_ledger(member_id,delta,type,reason,sale_id,created_by) values(p_member_id,v_earned,'spending','使用印花前計印花金額 HK$'||trim(to_char(v_earning_amount,'999999990.00'))||'；實收 HK$'||trim(to_char(v_final,'999999990.00')),v_sale.id,auth.uid()); end if;
   if v_birthday=1 then
     insert into public.stamp_ledger(member_id,delta,type,reason,sale_id,created_by) values(p_member_id,1,'birthday',v_year||' 生日月份獎賞',v_sale.id,auth.uid());
   end if;
@@ -370,7 +371,7 @@ begin
   end if;
   if p_appointment_id is not null then update public.appointments set status='completed' where id=p_appointment_id and member_id=p_member_id; end if;
   select coalesce(sum(delta),0)::integer into v_balance from public.stamp_ledger where member_id=p_member_id;
-  return jsonb_build_object('sale_id',v_sale.id,'subtotal',v_subtotal,'discount',v_discount,'final_amount',v_final,'discount_label',v_label,'redeemed_stamps',p_redeem_stamps,'earned_stamps',v_earned,'birthday_stamps',v_birthday,'balance',v_balance);
+  return jsonb_build_object('sale_id',v_sale.id,'subtotal',v_subtotal,'discount',v_discount,'final_amount',v_final,'discount_label',v_label,'redeemed_stamps',p_redeem_stamps,'earned_stamps',v_earned,'stamp_earning_amount',v_earning_amount,'birthday_stamps',v_birthday,'balance',v_balance);
 end $$;
 
 alter table public.profiles enable row level security;
@@ -446,5 +447,5 @@ insert into public.settings(key,value) values
   ('stamp_rules','{"threshold":600,"four_stamp_discount":0.10,"eight_stamp_discount":0.15,"product_member_discount":0.05}'::jsonb)
 on conflict(key) do nothing;
 
-update public.settings set value=value || '{"same_sale_redemption":true,"earning_basis":"final_amount","service_required":true}'::jsonb
+update public.settings set value=value || '{"same_sale_redemption":true,"earning_basis":"before_stamp_discount","service_required":true}'::jsonb
 where key='stamp_rules';

@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { birthdayStampAward, calculateSale, generateTimeSlots, isBirthdayMonth, isValidBusinessSlot, normalizeHongKongPhone, redemptionForBalance, stampsFromAmount } from "../js/rules.js";
 
-test("每張單按實收每滿600元給一個印花，餘額不累積", () => {
+test("每張單計印花金額每滿600元給一個印花，餘額不累積", () => {
   assert.equal(stampsFromAmount(599),0);
   assert.equal(stampsFromAmount(600),1);
   assert.equal(stampsFromAmount(1199),1);
@@ -28,14 +28,15 @@ test("印花優惠和產品95折不疊加，取最高折扣", () => {
   assert.equal(stampDiscount.earnedStamps,1);
 });
 
-test("新印花按折扣後實收計算", () => {
-  const summary=calculateSale([{kind:"service",name:"服務",quantity:1,unitPrice:1350}],4,4);
-  assert.equal(summary.finalAmount,1215);
+test("新印花在兌換前計算，不因兌換後實收降低而被收回", () => {
+  const summary=calculateSale([{kind:"service",name:"服務",quantity:1,unitPrice:1200}],4,4);
+  assert.equal(summary.stampEarningAmount,1200);
+  assert.equal(summary.finalAmount,1080);
   assert.equal(summary.earnedStamps,2);
 });
 
-test("同一單新印花可即時使用，4印及8印均按該折扣後金額判斷", () => {
-  for (const [balance, price, tier, final, earned] of [[3,800,4,720,1],[7,800,8,680,1],[0,3000,4,2700,4],[0,6000,8,5100,8]]) {
+test("同一單先賺新印花再即時兌換，支援4印及8印包括原有零印花", () => {
+  for (const [balance, price, tier, final, earned] of [[3,600,4,540,1],[7,600,8,510,1],[0,2400,4,2160,4],[0,4800,8,4080,8],[0,3000,4,2700,5],[0,6000,8,5100,10]]) {
     const summary = calculateSale([{kind:"service",quantity:1,unitPrice:price}],balance,tier);
     assert.equal(summary.redemptionAllowed,true);
     assert.equal(summary.finalAmount,final);
@@ -44,11 +45,22 @@ test("同一單新印花可即時使用，4印及8印均按該折扣後金額判
   }
 });
 
-test("折扣後不足600不能用未賺到的印花，金額邊界以分計算", () => {
-  for (const [price, balance, tier, allowed] of [[600,3,4,false],[666.66,3,4,false],[666.67,3,4,true],[705.87,7,8,false],[705.88,7,8,true]]) {
+test("使用印花前滿600即賺1印，未滿門檻或總印花不足仍不可兌換", () => {
+  for (const [price, balance, tier, allowed] of [[599.99,3,4,false],[600,3,4,true],[599.99,7,8,false],[600,7,8,true],[600,2,4,false]]) {
     const summary = calculateSale([{kind:"service",quantity:1,unitPrice:price}],balance,tier);
     assert.equal(summary.redemptionAllowed,allowed,`${price} / ${tier}`);
     assert.equal(summary.availableRedemptions.includes(tier),allowed);
+  }
+});
+
+test("切換印花優惠不會改變新印花，產品會員價保持同一計算基礎", () => {
+  const items=[{kind:"service",quantity:1,unitPrice:600},{kind:"product",quantity:1,unitPrice:600}];
+  for (const tier of [0,4,8,0,4]) {
+    const summary=calculateSale(items,8,tier);
+    assert.equal(summary.stampEarningAmount,1170);
+    assert.equal(summary.earnedStamps,1);
+    assert.equal(summary.remainingStamps,9-tier);
+    assert.equal(summary.redemptionAllowed,true);
   }
 });
 
