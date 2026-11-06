@@ -55,8 +55,8 @@ export class KhairApi {
     if (this.demoMode) return this.demo.getMemberDashboard(memberId);
     const [appointments, sales, stamps, catalog, stylists, assistants, balanceRows] = await Promise.all([
       this.rest(`/appointments?member_id=eq.${memberId}&order=start_at.desc&select=*`),
-      this.rest(`/sales?member_id=eq.${memberId}&order=completed_at.desc&select=*`),
-      this.rest(`/stamp_ledger?member_id=eq.${memberId}&order=created_at.desc&select=*`),
+      this.restAll(`/sales?member_id=eq.${memberId}&order=completed_at.desc,id.desc&select=*`),
+      this.restAll(`/stamp_ledger?member_id=eq.${memberId}&order=created_at.desc,id.desc&select=*`),
       this.getCatalog(), this.getStylists(), this.getAssistants(),
       this.rest(`/member_stamp_balances?member_id=eq.${memberId}&select=balance`)
     ]);
@@ -124,12 +124,12 @@ export class KhairApi {
   async getAdminDashboard() {
     if (this.demoMode) return this.demo.getAdminDashboard();
     const [profiles, appointments, sales, saleItems, stamps, referrals, catalog, stylists, assistants, settings] = await Promise.all([
-      this.rest(`/profiles?order=created_at.desc&select=*`),
-      this.rest(`/appointments?order=start_at.desc&select=*`),
-      this.rest(`/sales?order=completed_at.desc&select=*`),
-      this.rest(`/sale_items?select=*`),
-      this.rest(`/stamp_ledger?order=created_at.desc&select=*`),
-      this.rest(`/referrals?order=created_at.desc&select=*`),
+      this.restAll(`/profiles?order=created_at.desc,id.desc&select=*`),
+      this.restAll(`/appointments?order=start_at.desc,id.desc&select=*`),
+      this.restAll(`/sales?order=completed_at.desc,id.desc&select=*`),
+      this.restAll(`/sale_items?order=id.asc&select=*`),
+      this.restAll(`/stamp_ledger?order=created_at.desc,id.desc&select=*`),
+      this.restAll(`/referrals?order=created_at.desc,id.desc&select=*`),
       this.rest(`/catalog?order=sort_order.asc&select=*`), this.rest(`/stylists?order=name.asc&select=*`), this.rest(`/assistants?order=name.asc&select=*`),
       this.rest(`/settings?order=key.asc&select=*`)
     ]);
@@ -164,6 +164,21 @@ export class KhairApi {
   }
 
   async rpc(name, body) { return this.rest(`/rpc/${name}`, { method: "POST", body, prefer: "return=representation" }); }
+
+  async restAll(path) {
+    // Supabase applies a per-response row limit. Read every page so older
+    // revenue and stamps cannot silently disappear as the history grows.
+    const rows = [];
+    const firstIds = new Set();
+    for (;;) {
+      const page = await this.rest(`${path}${path.includes("?") ? "&" : "?"}limit=500&offset=${rows.length}`);
+      if (!Array.isArray(page)) throw new Error("資料讀取不完整，請重新同步。");
+      if (!page.length) return rows;
+      if (firstIds.has(page[0].id)) throw new Error("未能讀取完整歷史紀錄，請重新同步。");
+      firstIds.add(page[0].id);
+      rows.push(...page);
+    }
+  }
 
   async authRequest(path, body) {
     const response = await fetch(`${this.config.supabaseUrl}/auth/v1${path}`, {

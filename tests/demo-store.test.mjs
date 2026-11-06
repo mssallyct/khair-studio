@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { webcrypto } from "node:crypto";
 import { DemoStore } from "../js/demo-store.js";
+import { hongKongDateKey } from "../js/rules.js";
 
 class MemoryStorage {
   #data = new Map();
@@ -174,4 +175,89 @@ test("所有主要資料更新均記錄登入管理員", async () => {
   assert.equal(store.data.sales.at(-1).stylist_id, "sty-a");
   assert.equal(store.data.sales.at(-1).assistant_id, "assistant-a");
   assert.match(store.data.auditLog.at(-1).summary, /Hair Stylist A.*Hair Assistant A/);
+});
+
+const serviceSale = {memberId:"member-1",stylistId:"sty-a",items:[{kind:"service",name:"護理",quantity:1,unitPrice:800}],requestedRedemption:4};
+
+test("同一單先發印再扣印，重新載入後消費及營業額仍保留", async () => {
+  localStorage.clear();
+  const store = await createAuthenticatedStore();
+  const result = await store.completeSale(serviceSale);
+  assert.equal(result.sale.final_amount,720);
+  assert.equal(result.balance,0);
+  assert.deepEqual(store.data.stampLedger.filter(row=>row.sale_id===result.sale.id).map(row=>row.delta),[1,-4]);
+  const reopened = createStore();
+  const saved = (await reopened.getAdminDashboard()).sales.find(row=>row.id===result.sale.id);
+  assert.equal(saved.final_amount,720);
+  assert.equal(reopened.stampBalance("member-1"),0);
+});
+
+test("不足印花拒絕整宗消費，不多發印花或紀錄營業額", async () => {
+  localStorage.clear();
+  const store = await createAuthenticatedStore();
+  const before = JSON.stringify(store.data);
+  await assert.rejects(()=>store.completeSale({...serviceSale,items:[{kind:"service",name:"護理",quantity:1,unitPrice:600}]}),/不足/);
+  assert.equal(JSON.stringify(store.data),before);
+});
+
+test("純產品消費計營業額但不發消費、生日或介紹印花", async () => {
+  localStorage.clear();
+  const store = await createAuthenticatedStore();
+  const month = hongKongDateKey(new Date()).slice(5,7);
+  store.data.profiles.find(row=>row.id==="member-1").birthday=`1990-${month}-02`;
+  store.data.referrals.push({id:"ref-test",referrer_id:"member-2",referred_member_id:"member-1",awarded_at:null});
+  store.save();
+  const beforeStamps = store.data.stampLedger.length;
+  const result = await store.completeSale({...serviceSale,items:[{kind:"product",name:"洗髮水",quantity:1,unitPrice:1200}],requestedRedemption:0});
+  assert.equal(result.sale.final_amount,1140);
+  assert.equal(result.summary.earnedStamps,0);
+  assert.equal(store.data.stampLedger.length,beforeStamps);
+  assert.equal(store.data.referrals[0].awarded_at,null);
+  await store.completeSale({...serviceSale,requestedRedemption:0});
+  assert.ok(store.data.referrals[0].awarded_at);
+  assert.equal(store.data.stampLedger.filter(row=>row.type==="birthday").length,1);
+  await store.completeSale({...serviceSale,requestedRedemption:0});
+  assert.equal(store.data.stampLedger.filter(row=>row.type==="birthday").length,1);
+});
+
+test("歷年舊消費不重算印花、升級不截斷歷史", async () => {
+  localStorage.clear();
+  const store = createStore();
+  store.data.sales = Array.from({length:1505},(_,i)=>({id:`old-${i}`,member_id:"member-1",final_amount:95,completed_at:"2020-01-01T12:00:00Z"}));
+  const oldLedger = JSON.stringify(store.data.stampLedger);
+  store.save();
+  const reopened = createStore();
+  assert.equal((await reopened.getAdminDashboard()).sales.length,1505);
+  assert.equal(JSON.stringify(reopened.data.stampLedger),oldLedger);
+});
+
+test("資料損壞不會被示範資料覆蓋", () => {
+  localStorage.clear();
+  localStorage.setItem("khair-demo-v1","{damaged history");
+  assert.throws(()=>createStore(),/未被覆蓋/);
+  assert.equal(localStorage.getItem("khair-demo-v1"),"{damaged history");
+});
+
+test("儲存失敗不當成交完成，重試只記錄一次", async () => {
+  localStorage.clear();
+  const store = await createAuthenticatedStore();
+  const before = localStorage.getItem("khair-demo-v1");
+  const setItem = localStorage.setItem;
+  localStorage.setItem = function(key,value) { if(key==="khair-demo-v1") throw new Error("QuotaExceededError"); return setItem.call(this,key,value); };
+  try {
+    await assert.rejects(()=>store.completeSale(serviceSale),/未能儲存/);
+    assert.equal(JSON.stringify(store.data),before);
+    assert.equal(localStorage.getItem("khair-demo-v1"),before);
+  } finally { localStorage.setItem = setItem; }
+  await store.completeSale(serviceSale);
+  assert.equal(store.data.sales.length,1);
+});
+
+test("另一分頁已更新時不覆蓋新的營業額資料", async () => {
+  localStorage.clear();
+  const first = await createAuthenticatedStore();
+  const second = await createAuthenticatedStore();
+  await first.completeSale(serviceSale);
+  await assert.rejects(()=>second.completeSale(serviceSale),/另一個分頁/);
+  assert.equal(createStore().data.sales.length,1);
 });

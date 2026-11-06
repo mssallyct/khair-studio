@@ -24,15 +24,32 @@ test("管理員匯出多工作表 XLSX", () => {
   assert.ok(files.has("[Content_Types].xml"));
   assert.ok(files.has("xl/workbook.xml"));
   assert.ok(files.has("xl/worksheets/sheet12.xml"));
+  assert.ok(files.has("xl/worksheets/sheet14.xml"));
   assert.match(files.get("xl/workbook.xml"), /name="會員"/);
   assert.match(files.get("xl/workbook.xml"), /name="髮型助理"/);
   assert.match(files.get("xl/workbook.xml"), /name="操作記錄"/);
+  assert.match(files.get("xl/workbook.xml"), /name="歷月營業額"/);
+  assert.match(files.get("xl/workbook.xml"), /name="營業額明細"/);
   assert.match(files.get("xl/worksheets/sheet2.xml"), /示範會員/);
   assert.match(files.get("xl/worksheets/sheet4.xml"), /髮型師 A/);
   assert.match(files.get("xl/worksheets/sheet4.xml"), /助理 B/);
   assert.match(files.get("xl/worksheets/sheet8.xml"), /洗剪吹/);
   assert.match(files.get("xl/worksheets/sheet10.xml"), /助理 B/);
   assert.match(files.get("xl/worksheets/sheet11.xml"), /tester/);
+  assert.match(files.get("xl/worksheets/sheet13.xml"), /2026-10/);
+  assert.match(files.get("xl/worksheets/sheet14.xml"), /累計營業額/);
+});
+
+test("Excel 包含由第一宗至今的所有營業額、歷月及累計實收", () => {
+  const sales = Array.from({length:1505},(_,i)=>({id:`sale-history-${i}`,member_id:"m1",completed_at:new Date(Date.UTC(2020,0,1+i)).toISOString(),subtotal:100,discount:4.75,final_amount:95.25}));
+  const files = unzipStoredFiles(buildAdminWorkbook({sales:[...sales].reverse()},new Date("2026-11-06T00:00:00Z")));
+  const detail = files.get("xl/worksheets/sheet14.xml");
+  assert.equal((detail.match(/<row r=/g)||[]).length,1506);
+  assert.ok(detail.indexOf("sale-history-0<") < detail.indexOf("sale-history-1504<"));
+  assert.match(detail, /r="H1506" s="4"><v>143351.25<\/v>/);
+  assert.match(files.get("xl/worksheets/sheet13.xml"),/2020-01/);
+  assert.match(files.get("xl/worksheets/sheet13.xml"),/2026-11/);
+  assert.match(files.get("xl/worksheets/sheet4.xml"),/sale-history-0</);
 });
 
 function unzipStoredFiles(bytes) {

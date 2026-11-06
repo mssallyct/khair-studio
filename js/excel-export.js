@@ -1,3 +1,5 @@
+import { summarizeRevenue } from "./revenue.js";
+
 const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 const encoder = new TextEncoder();
 
@@ -30,6 +32,7 @@ function buildSheets(data, exportedAt) {
   const admins = profiles.filter(item => item.role === "admin");
   const appointments = data.appointments || [];
   const sales = data.sales || [];
+  const revenue = summarizeRevenue(sales, exportedAt);
   const saleItems = data.saleItems || [];
   const stamps = data.stamps || [];
   const referrals = data.referrals || [];
@@ -61,7 +64,9 @@ function buildSheets(data, exportedAt) {
         ["會員人數", integer(members.length)],
         ["預約總數", integer(appointments.length)],
         ["消費記錄總數", integer(sales.length)],
-        ["累計實收金額", currency(sales.reduce((sum, item) => sum + Number(item.final_amount || 0), 0))],
+        ["累計實收金額", currency(revenue.totalRevenue)],
+        [`本月營業額（${revenue.currentMonth}）`, currency(revenue.currentRevenue)],
+        [`上月營業額（${revenue.previousMonth}）`, currency(revenue.previousRevenue)],
         ["印花變動記錄總數", integer(stamps.length)],
         ["操作記錄總數", integer(auditLog.length)],
         ["資料地區", "香港"],
@@ -128,11 +133,30 @@ function buildSheets(data, exportedAt) {
       rows: settings.length ? settings.map(item => [item.key, typeof item.value === "string" ? item.value : JSON.stringify(item.value)]) : [
         ["營業時間", "星期一至日 11:00–21:00"],
         ["預約間隔", "30分鐘"],
-        ["消費印花", "每張單實收每滿 HK$600 得1個"],
+        ["消費印花", "有做服務：服務＋產品折扣後實收每滿 HK$600 得1個；淨產品不適用印花"],
         ["4個印花", "全單9折"],
         ["8個印花", "全單85折"],
-        ["產品會員優惠", "95折（不與印花優惠同時使用）"]
+        ["產品會員優惠", "95折（不與印花優惠同時使用）"],
+        ["即日印花", "可於同一張單使用；按折扣後實收計印花"]
       ]
+    },
+    {
+      name: "歷月營業額",
+      headers: ["月份（香港）", "消費宗數", "營業額（實收）"],
+      rows: revenue.months.map(item => [item.month, integer(item.count), currency(item.revenue)])
+    },
+    {
+      name: "營業額明細",
+      headers: ["消費編號", "完成時間（香港）", "會員姓名", "香港電話", "原價", "折扣", "實收營業額", "累計營業額", "跟進髮型師", "跟進髮型助理", "完成者"],
+      // All recorded transactions, oldest first. Never restrict to this month
+      // or the UI's recent-sales list. Existing historical sales stay unchanged.
+      rows: (() => {
+        let cumulativeCents = 0;
+        return [...sales].sort((a, b) => new Date(a.completed_at) - new Date(b.completed_at) || String(a.id).localeCompare(String(b.id))).map(item => {
+          cumulativeCents += Math.round((Number(item.final_amount || 0) + Number.EPSILON) * 100);
+          return [item.id, dateTime(item.completed_at), memberName(item.member_id), memberPhone(item.member_id), currency(item.subtotal), currency(item.discount), currency(item.final_amount), currency(cumulativeCents / 100), stylistName(item.stylist_id), assistantName(item.assistant_id), adminName(item.completed_by)];
+        });
+      })()
     }
   ];
 }
@@ -158,7 +182,7 @@ function workbookFiles(sheets, exportedAt) {
 
 function worksheetXml(sheet) {
   const matrix = [sheet.headers, ...sheet.rows];
-  const widths = sheet.headers.map((header, column) => Math.min(42, Math.max(10, ...matrix.map(row => displayWidth(cellDisplay(row[column])) + 2))));
+  const widths = sheet.headers.map((header, column) => matrix.reduce((width, row) => width === 42 ? width : Math.min(42, Math.max(width, displayWidth(cellDisplay(row[column])) + 2)), 10));
   const cols = widths.map((width, index) => `<col min="${index + 1}" max="${index + 1}" width="${width}" customWidth="1"/>`).join("");
   const rows = matrix.map((row, rowIndex) => `<row r="${rowIndex + 1}"${rowIndex === 0 ? ' ht="22" customHeight="1"' : ""}>${row.map((value, columnIndex) => cellXml(value, rowIndex + 1, columnIndex + 1, rowIndex === 0)).join("")}</row>`).join("");
   const lastCell = `${columnName(sheet.headers.length)}${Math.max(1, matrix.length)}`;

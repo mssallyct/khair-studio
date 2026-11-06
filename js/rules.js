@@ -25,7 +25,7 @@ export function redemptionForBalance(balance, requested) {
   return { stamps: 0, rate: 0, label: "不使用印花" };
 }
 
-export function calculateSale(items, stampBalance = 0, requestedRedemption = 0) {
+export function calculateSale(items, stampBalance = 0, requestedRedemption = 0, birthdayStamps = 0) {
   const normalized = (items || []).map(item => ({
     ...item,
     quantity: Math.max(0, Number(item.quantity) || 0),
@@ -34,20 +34,51 @@ export function calculateSale(items, stampBalance = 0, requestedRedemption = 0) 
   }));
   const subtotal = roundMoney(normalized.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0));
   const productSubtotal = roundMoney(normalized.filter(item => item.kind === "product").reduce((sum, item) => sum + item.quantity * item.unitPrice, 0));
-  const redemption = redemptionForBalance(stampBalance, requestedRedemption);
-  const stampDiscount = roundMoney(subtotal * redemption.rate);
-  const productDiscount = redemption.stamps ? 0 : roundMoney(productSubtotal * 0.05);
-  const discount = Math.max(stampDiscount, productDiscount);
-  const finalAmount = roundMoney(Math.max(0, subtotal - discount));
+  const stampEligible = normalized.some(item => item.kind === "service" && item.quantity > 0);
+  const balance = Math.max(0, Math.floor(Number(stampBalance) || 0));
+  const bonusStamps = stampEligible && birthdayStamps === 1 && subtotal > 0 ? 1 : 0;
+  // Evaluate each tier using its OWN final amount. This avoids awarding stamps
+  // from the undiscounted price and then spending stamps the final bill did not earn.
+  const quote = tier => {
+    const redemption = redemptionForBalance(tier, tier);
+    const subtotalCents = Math.round(subtotal * 100);
+    const productDiscountCents = redemption.stamps ? 0 : Math.round(Math.round(productSubtotal * 100) * 5 / 100);
+    const discountCents = redemption.stamps ? Math.round(subtotalCents * (tier === 8 ? 15 : 10) / 100) : productDiscountCents;
+    const productDiscount = productDiscountCents / 100;
+    const discount = discountCents / 100;
+    const finalAmount = Math.max(0, subtotalCents - discountCents) / 100;
+    return { redemption, discount, finalAmount, earnedStamps: stampEligible ? stampsFromAmount(finalAmount) : 0, discountLabel: redemption.stamps ? redemption.label : productDiscount > 0 ? "會員產品95折" : "沒有折扣" };
+  };
+  const availableRedemptions = [4, 8].filter(tier => stampEligible && subtotal > 0 && balance + quote(tier).earnedStamps + bonusStamps >= tier);
+  const requested = Number(requestedRedemption);
+  const selected = quote([4, 8].includes(requested) ? requested : 0);
+  const redemptionAllowed = requested === 0 || availableRedemptions.includes(requested);
   return {
     subtotal,
     productSubtotal,
-    discount,
-    finalAmount,
-    redemption,
-    discountLabel: redemption.stamps ? redemption.label : productDiscount > 0 ? "會員產品95折" : "沒有折扣",
-    earnedStamps: stampsFromAmount(finalAmount)
+    ...selected,
+    stampEligible,
+    bonusStamps,
+    availableRedemptions,
+    redemptionAllowed,
+    redemptionError: redemptionAllowed ? "" : stampEligible ? "折扣後所得印花加現有結餘仍不足，請重新選擇印花優惠。" : "淨產品消費不適用印花優惠，請選擇不使用印花。",
+    remainingStamps: balance + selected.earnedStamps + bonusStamps - selected.redemption.stamps
   };
+}
+
+export function hongKongDateKey(value) {
+  if (value == null || value === "") return "";
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const parts = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Hong_Kong", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(date);
+  const p = Object.fromEntries(parts.map(part => [part.type, part.value]));
+  return `${p.year}-${p.month}-${p.day}`;
+}
+
+export function birthdayStampAward(profile, ledger = [], saleDate = new Date()) {
+  if (!profile || !isBirthdayMonth(profile.birthday, saleDate)) return 0;
+  const year = hongKongDateKey(saleDate).slice(0, 4);
+  return ledger.some(item => item.member_id === profile.id && item.type === "birthday" && hongKongDateKey(item.created_at).slice(0, 4) === year) ? 0 : 1;
 }
 
 export function isBirthdayMonth(birthday, saleDate = new Date()) {
@@ -83,7 +114,7 @@ export function isValidBusinessSlot(time, durationMinutes = 30) {
 }
 
 export function formatMoney(value) {
-  return new Intl.NumberFormat("zh-HK", { style: "currency", currency: "HKD", maximumFractionDigits: 0 }).format(Number(value) || 0);
+  return new Intl.NumberFormat("zh-HK", { style: "currency", currency: "HKD", minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(Number(value) || 0);
 }
 
 export function formatDateTime(value) {

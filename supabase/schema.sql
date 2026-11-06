@@ -284,6 +284,8 @@ begin
   if not public.is_admin() then raise exception '只有管理員可調整印花'; end if;
   if p_delta is null or p_delta = 0 then raise exception '印花調整必須為非零整數'; end if;
   if trim(coalesce(p_reason,'')) = '' then raise exception '必須填寫調整原因'; end if;
+  perform 1 from public.profiles where id=p_member_id and role='member' and active for update;
+  if not found then raise exception '找不到有效會員'; end if;
   select coalesce(sum(delta),0)::integer into current_balance from public.stamp_ledger where member_id=p_member_id;
   if current_balance + p_delta < 0 then raise exception '印花結餘不足'; end if;
   insert into public.stamp_ledger(member_id,delta,type,reason,created_by)
@@ -305,13 +307,15 @@ as $$
 declare
   v_subtotal numeric(10,2); v_product numeric(10,2); v_discount numeric(10,2); v_final numeric(10,2);
   v_balance integer; v_earned integer; v_label text; v_sale public.sales; v_item jsonb;
-  v_profile public.profiles; v_year integer; v_ref public.referrals;
+  v_profile public.profiles; v_year integer; v_ref public.referrals; v_birthday integer := 0;
+  v_has_service boolean;
   v_stylist_id uuid := p_stylist_id; v_appointment_stylist_id uuid;
 begin
   if not public.is_admin() then raise exception '只有管理員可完成消費'; end if;
-  if p_redeem_stamps not in (0,4,8) then raise exception '印花兌換只可選0、4或8'; end if;
-  if jsonb_typeof(p_items) <> 'array' or jsonb_array_length(p_items) = 0 then raise exception '消費必須最少有一個項目'; end if;
-  select * into v_profile from public.profiles where id=p_member_id and role='member' and active;
+  if p_redeem_stamps is null or p_redeem_stamps not in (0,4,8) then raise exception '印花兌換只可選0、4或8'; end if;
+  if p_items is null or jsonb_typeof(p_items) <> 'array' or jsonb_array_length(p_items) = 0 then raise exception '消費必須最少有一個項目'; end if;
+  -- Serialize checkout/adjustments for this member before reading the balance.
+  select * into v_profile from public.profiles where id=p_member_id and role='member' and active for update;
   if not found then raise exception '找不到有效會員'; end if;
   if p_appointment_id is not null then
     select stylist_id into v_appointment_stylist_id from public.appointments where id=p_appointment_id and member_id=p_member_id;
@@ -325,32 +329,48 @@ begin
     if not found then raise exception '請選擇有效髮型助理'; end if;
   end if;
   select coalesce(sum(delta),0)::integer into v_balance from public.stamp_ledger where member_id=p_member_id;
-  if p_redeem_stamps > v_balance then raise exception '印花結餘不足'; end if;
+  v_year:=extract(year from now() at time zone 'Asia/Hong_Kong');
+  if v_profile.birthday is not null and extract(month from v_profile.birthday)=extract(month from now() at time zone 'Asia/Hong_Kong') and not exists(select 1 from public.stamp_ledger where member_id=p_member_id and type='birthday' and extract(year from created_at at time zone 'Asia/Hong_Kong')=v_year) then
+    v_birthday:=1;
+  end if;
+  if exists(select 1 from jsonb_array_elements(p_items) x where (x->>'quantity') is null or (x->>'unit_price') is null or (x->>'quantity')::integer <= 0 or (x->>'unit_price')::numeric < 0) then
+    raise exception '請檢查消費項目的數量及單價';
+  end if;
   select round(coalesce(sum((x->>'quantity')::integer*(x->>'unit_price')::numeric),0),2),
-         round(coalesce(sum(case when x->>'kind'='product' then (x->>'quantity')::integer*(x->>'unit_price')::numeric else 0 end),0),2)
-  into v_subtotal,v_product from jsonb_array_elements(p_items) x;
+         round(coalesce(sum(case when x->>'kind'='product' then (x->>'quantity')::integer*(x->>'unit_price')::numeric else 0 end),0),2),
+         coalesce(bool_or(x->>'kind'='service'),false)
+  into v_subtotal,v_product,v_has_service from jsonb_array_elements(p_items) x;
   if v_subtotal <= 0 then raise exception '實收項目金額必須大於0'; end if;
+  if not v_has_service then
+    v_birthday:=0;
+    if p_redeem_stamps>0 then raise exception '淨產品消費不適用印花優惠，請選擇不使用印花'; end if;
+  end if;
   if p_redeem_stamps=8 then v_discount:=round(v_subtotal*.15,2);v_label:='8印花・全單85折';
   elsif p_redeem_stamps=4 then v_discount:=round(v_subtotal*.10,2);v_label:='4印花・全單9折';
   elsif v_product>0 then v_discount:=round(v_product*.05,2);v_label:='會員產品95折';
   else v_discount:=0;v_label:='沒有折扣'; end if;
-  v_final:=round(v_subtotal-v_discount,2); v_earned:=floor(v_final/600)::integer;
+  v_final:=round(v_subtotal-v_discount,2);
+  v_earned:=case when v_has_service then floor(v_final/600)::integer else 0 end;
+  -- Same-sale redemption uses stamps earned on the discounted final amount,
+  -- not the original price. Never commit a negative balance.
+  if p_redeem_stamps > v_balance + v_earned + v_birthday then raise exception '折扣後所得印花加現有結餘仍不足，請重新選擇印花優惠'; end if;
   insert into public.sales(member_id,appointment_id,stylist_id,assistant_id,subtotal,discount,final_amount,discount_label,stamp_redeemed,completed_by)
   values(p_member_id,p_appointment_id,v_stylist_id,p_assistant_id,v_subtotal,v_discount,v_final,v_label,p_redeem_stamps,auth.uid()) returning * into v_sale;
   for v_item in select * from jsonb_array_elements(p_items) loop
     insert into public.sale_items(sale_id,kind,name,quantity,unit_price) values(v_sale.id,(v_item->>'kind')::public.catalog_kind,v_item->>'name',(v_item->>'quantity')::integer,(v_item->>'unit_price')::numeric);
   end loop;
-  if p_redeem_stamps>0 then insert into public.stamp_ledger(member_id,delta,type,reason,sale_id,created_by) values(p_member_id,-p_redeem_stamps,'redemption',v_label,v_sale.id,auth.uid()); end if;
   if v_earned>0 then insert into public.stamp_ledger(member_id,delta,type,reason,sale_id,created_by) values(p_member_id,v_earned,'spending','消費 HK$'||trim(to_char(v_final,'999999990.00')),v_sale.id,auth.uid()); end if;
-  v_year:=extract(year from now() at time zone 'Asia/Hong_Kong');
-  if v_profile.birthday is not null and extract(month from v_profile.birthday)=extract(month from now() at time zone 'Asia/Hong_Kong') and not exists(select 1 from public.stamp_ledger where member_id=p_member_id and type='birthday' and extract(year from created_at at time zone 'Asia/Hong_Kong')=v_year) then
+  if v_birthday=1 then
     insert into public.stamp_ledger(member_id,delta,type,reason,sale_id,created_by) values(p_member_id,1,'birthday',v_year||' 生日月份獎賞',v_sale.id,auth.uid());
   end if;
-  select * into v_ref from public.referrals where referred_member_id=p_member_id and awarded_at is null for update;
-  if found then update public.referrals set awarded_at=now() where id=v_ref.id; insert into public.stamp_ledger(member_id,delta,type,reason,sale_id,created_by) values(v_ref.referrer_id,1,'referral','成功介紹 '||v_profile.name,v_sale.id,auth.uid()); end if;
+  if p_redeem_stamps>0 then insert into public.stamp_ledger(member_id,delta,type,reason,sale_id,created_by) values(p_member_id,-p_redeem_stamps,'redemption',v_label,v_sale.id,auth.uid()); end if;
+  if v_has_service then
+    select * into v_ref from public.referrals where referred_member_id=p_member_id and awarded_at is null for update;
+    if found then update public.referrals set awarded_at=now() where id=v_ref.id; insert into public.stamp_ledger(member_id,delta,type,reason,sale_id,created_by) values(v_ref.referrer_id,1,'referral','成功介紹 '||v_profile.name,v_sale.id,auth.uid()); end if;
+  end if;
   if p_appointment_id is not null then update public.appointments set status='completed' where id=p_appointment_id and member_id=p_member_id; end if;
   select coalesce(sum(delta),0)::integer into v_balance from public.stamp_ledger where member_id=p_member_id;
-  return jsonb_build_object('sale_id',v_sale.id,'subtotal',v_subtotal,'discount',v_discount,'final_amount',v_final,'discount_label',v_label,'redeemed_stamps',p_redeem_stamps,'earned_stamps',v_earned,'balance',v_balance);
+  return jsonb_build_object('sale_id',v_sale.id,'subtotal',v_subtotal,'discount',v_discount,'final_amount',v_final,'discount_label',v_label,'redeemed_stamps',p_redeem_stamps,'earned_stamps',v_earned,'birthday_stamps',v_birthday,'balance',v_balance);
 end $$;
 
 alter table public.profiles enable row level security;
@@ -425,3 +445,6 @@ insert into public.settings(key,value) values
   ('business_hours','{"open":"11:00","close":"21:00","days":[1,2,3,4,5,6,0]}'::jsonb),
   ('stamp_rules','{"threshold":600,"four_stamp_discount":0.10,"eight_stamp_discount":0.15,"product_member_discount":0.05}'::jsonb)
 on conflict(key) do nothing;
+
+update public.settings set value=value || '{"same_sale_redemption":true,"earning_basis":"final_amount","service_required":true}'::jsonb
+where key='stamp_rules';

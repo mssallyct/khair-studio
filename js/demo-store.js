@@ -1,4 +1,4 @@
-import { calculateSale, isBirthdayMonth, isValidBusinessSlot, normalizeHongKongPhone, toHongKongIso } from "./rules.js";
+import { birthdayStampAward, calculateSale, hongKongDateKey, isValidBusinessSlot, normalizeHongKongPhone, toHongKongIso } from "./rules.js";
 
 const STORAGE_KEY = "khair-demo-v1";
 const CREDENTIALS_KEY = "khair-admin-credentials-v2";
@@ -19,24 +19,40 @@ export class DemoStore {
     this.accounts = accounts;
     this.credentialIterations = credentialIterations;
     this.data = this.read();
+    this.savedData = JSON.stringify(this.data);
     this.session = null;
   }
 
   read() {
-    try {
-      const existing = JSON.parse(localStorage.getItem(STORAGE_KEY));
-      if (existing?.profiles?.length) {
-        const migrated = migrateData(existing, this.accounts);
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(migrated));
-        return migrated;
-      }
-    } catch {}
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw !== null) {
+      let existing;
+      try { existing = JSON.parse(raw); }
+      catch { throw new Error("儲存資料無法讀取，原有資料未被覆蓋。請勿清除網站資料，請先聯絡管理員協助復原。"); }
+      if (!existing?.profiles?.length || !Array.isArray(existing.sales)) throw new Error("儲存資料不完整，已停止載入以保護原有紀錄。請勿清除網站資料。");
+      const migrated = migrateData(existing, this.accounts);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(migrated));
+      return migrated;
+    }
     const seeded = seedData(this.accounts);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(seeded));
     return seeded;
   }
 
-  save() { localStorage.setItem(STORAGE_KEY, JSON.stringify(this.data)); }
+  save() {
+    const next = JSON.stringify(this.data);
+    try {
+      if (localStorage.getItem(STORAGE_KEY) !== this.savedData) {
+        throw new Error("資料已由另一個分頁更新，請重新整理網頁後再操作。");
+      }
+      localStorage.setItem(STORAGE_KEY, next);
+    } catch (error) {
+      this.data = JSON.parse(this.savedData);
+      if (error.message.includes("另一個分頁")) throw error;
+      throw new Error("未能儲存，本次操作未完成。請勿重複收款或清除網站資料；請先匯出 Excel 備份並檢查裝置儲存空間。");
+    }
+    this.savedData = next;
+  }
   id(prefix) { return `${prefix}-${crypto.randomUUID()}`; }
 
   actor() {
@@ -260,7 +276,7 @@ export class DemoStore {
       assistants: [...this.data.assistants].sort((a,b) => a.name.localeCompare(b.name, "zh-HK")),
       settings: [
         { key: "business_hours", value: { open: "11:00", close: "21:00", days: [1,2,3,4,5,6,0] } },
-        { key: "stamp_rules", value: { threshold: 600, four_stamp_discount: 0.10, eight_stamp_discount: 0.15, product_member_discount: 0.05 } }
+        { key: "stamp_rules", value: { threshold: 600, four_stamp_discount: 0.10, eight_stamp_discount: 0.15, product_member_discount: 0.05, same_sale_redemption: true, earning_basis: "final_amount", service_required: true } }
       ]
     };
   }
@@ -289,26 +305,31 @@ export class DemoStore {
 
   async completeSale({ memberId, appointmentId, stylistId, assistantId, items, requestedRedemption, adminId }) {
     const actor = this.actor();
-    const profile = this.data.profiles.find(item => item.id === memberId);
+    const profile = this.data.profiles.find(item => item.id === memberId && item.role === "member" && item.active !== false);
     if (!profile) throw new Error("找不到會員。");
+    if (!Array.isArray(items) || !items.length || items.some(item => !Number.isInteger(Number(item.quantity)) || Number(item.quantity) <= 0 || !Number.isFinite(Number(item.unitPrice)) || Number(item.unitPrice) < 0)) throw new Error("請檢查消費項目的數量及單價。");
     const appointment = appointmentId ? this.data.appointments.find(item => item.id === appointmentId && item.member_id === memberId) : null;
+    if (appointmentId && !appointment) throw new Error("找不到此會員的相關預約。");
     const selectedStylistId = stylistId || appointment?.stylist_id;
     const stylist = this.data.stylists.find(item => item.id === selectedStylistId && item.active !== false);
     if (!stylist) throw new Error("請選擇有效髮型師。");
     const assistant = assistantId ? this.data.assistants.find(item => item.id === assistantId && item.active !== false) : null;
     if (assistantId && !assistant) throw new Error("請選擇有效髮型助理。");
     const existingBalance = this.stampBalance(memberId);
-    const summary = calculateSale(items, existingBalance, requestedRedemption);
-    const sale = { id: this.id("sale"), member_id: memberId, appointment_id: appointmentId || null, stylist_id: stylist.id, assistant_id: assistant?.id || null, subtotal: summary.subtotal, discount: summary.discount, final_amount: summary.finalAmount, discount_label: summary.discountLabel, stamp_redeemed: summary.redemption.stamps, completed_by: actor.id, completed_at: new Date().toISOString() };
+    const saleDate = new Date();
+    const birthdayStamps = birthdayStampAward(profile, this.data.stampLedger, saleDate);
+    const summary = calculateSale(items, existingBalance, requestedRedemption ?? 0, birthdayStamps);
+    if (summary.subtotal <= 0) throw new Error("實收項目金額必須大於0。");
+    if (!summary.redemptionAllowed) throw new Error(summary.redemptionError);
+    const sale = { id: this.id("sale"), member_id: memberId, appointment_id: appointmentId || null, stylist_id: stylist.id, assistant_id: assistant?.id || null, subtotal: summary.subtotal, discount: summary.discount, final_amount: summary.finalAmount, discount_label: summary.discountLabel, stamp_redeemed: summary.redemption.stamps, completed_by: actor.id, completed_at: saleDate.toISOString() };
     this.data.sales.push(sale);
     for (const item of items) this.data.saleItems.push({ id: this.id("line"), sale_id: sale.id, kind: item.kind, name: item.name, quantity: Number(item.quantity), unit_price: Number(item.unitPrice) });
-    if (summary.redemption.stamps) this.data.stampLedger.push({ id: this.id("stamp"), member_id: memberId, delta: -summary.redemption.stamps, type: "redemption", reason: summary.discountLabel, sale_id: sale.id, created_by: actor.id, created_at: sale.completed_at });
     if (summary.earnedStamps) this.data.stampLedger.push({ id: this.id("stamp"), member_id: memberId, delta: summary.earnedStamps, type: "spending", reason: `消費 ${summary.finalAmount} 元`, sale_id: sale.id, created_by: actor.id, created_at: sale.completed_at });
-    const year = new Date().getFullYear();
-    const birthdayAlready = this.data.stampLedger.some(item => item.member_id === memberId && item.type === "birthday" && new Date(item.created_at).getFullYear() === year);
-    if (!birthdayAlready && isBirthdayMonth(profile.birthday)) this.data.stampLedger.push({ id: this.id("stamp"), member_id: memberId, delta: 1, type: "birthday", reason: `${year} 生日月份獎賞`, sale_id: sale.id, created_by: actor.id, created_at: sale.completed_at });
+    const year = hongKongDateKey(saleDate).slice(0, 4);
+    if (summary.bonusStamps) this.data.stampLedger.push({ id: this.id("stamp"), member_id: memberId, delta: 1, type: "birthday", reason: `${year} 生日月份獎賞`, sale_id: sale.id, created_by: actor.id, created_at: sale.completed_at });
+    if (summary.redemption.stamps) this.data.stampLedger.push({ id: this.id("stamp"), member_id: memberId, delta: -summary.redemption.stamps, type: "redemption", reason: summary.discountLabel, sale_id: sale.id, created_by: actor.id, created_at: sale.completed_at });
     const referral = this.data.referrals.find(item => item.referred_member_id === memberId && !item.awarded_at);
-    if (referral) {
+    if (referral && summary.stampEligible) {
       referral.awarded_at = sale.completed_at;
       this.data.stampLedger.push({ id: this.id("stamp"), member_id: referral.referrer_id, delta: 1, type: "referral", reason: `成功介紹 ${profile.name}`, sale_id: sale.id, created_by: actor.id, created_at: sale.completed_at });
     }

@@ -1,10 +1,11 @@
 import { KhairApi } from "./api.js";
-import { APPOINTMENT_LABELS, calculateSale, formatDateTime, formatMoney, generateTimeSlots } from "./rules.js";
+import { APPOINTMENT_LABELS, birthdayStampAward, calculateSale, formatDateTime, formatMoney, generateTimeSlots } from "./rules.js";
 import { downloadAdminWorkbook } from "./excel-export.js";
 import { findMembersByPhone, normalizePhoneSearch } from "./member-search.js";
 import { buildMemberDetail } from "./member-detail.js";
+import { summarizeRevenue } from "./revenue.js";
 
-const api = new KhairApi(window.KHAIR_CONFIG || {});
+let api;
 const root = document.querySelector("#app");
 const toastEl = document.querySelector("#toast");
 
@@ -22,17 +23,22 @@ const state = {
 boot();
 
 async function boot() {
-  if ("serviceWorker" in navigator) navigator.serviceWorker.register("./sw.js").catch(() => null);
-  state.session = await api.getSession();
-  if (state.session) {
-    state.profile = await api.getProfile();
-    if (!state.profile || state.profile.role !== "admin") {
-      await api.signOut();
-      state.session = null;
-      state.profile = null;
+  try {
+    api = new KhairApi(window.KHAIR_CONFIG || {});
+    if ("serviceWorker" in navigator) navigator.serviceWorker.register("./sw.js").catch(() => null);
+    state.session = await api.getSession();
+    if (state.session) {
+      state.profile = await api.getProfile();
+      if (!state.profile || state.profile.role !== "admin") {
+        await api.signOut();
+        state.session = null;
+        state.profile = null;
+      }
     }
+    await refresh();
+  } catch (error) {
+    root.innerHTML = `<main class="auth-shell"><section class="card"><h1>暫時無法載入資料</h1><p>${esc(error.message)}</p><p class="muted">請勿清除網站資料。原有消費紀錄不會以示範資料覆蓋。</p></section></main>`;
   }
-  await refresh();
 }
 
 async function refresh() {
@@ -59,7 +65,7 @@ function renderAuth() {
           <h1>Your hair,<br>your moment.</h1>
           <p>預約、消費及電子印花，一個 App 輕鬆管理。星期一至日 11:00–21:00。</p>
         </div>
-        <div class="brand-notes"><span>每滿 HK$600 · 1印花</span><span>4印花 · 全單9折</span><span>8印花 · 全單85折</span></div>
+        <div class="brand-notes"><span>含服務單每滿 HK$600 · 1印花</span><span>4印花 · 全單9折</span><span>8印花 · 全單85折</span></div>
       </section>
       <section class="auth-panel">
         <div class="auth-card">
@@ -145,7 +151,7 @@ function stampCard() {
     <div class="card-head"><div><p class="eyebrow">Stamp Wallet</p><h2>${balance} 個電子印花</h2></div><strong>${balance >= 8 ? "可享85折" : balance >= 4 ? "可享9折" : `尚欠${remaining}個`}</strong></div>
     <div class="stamp-row">${Array.from({length:8}, (_,i) => `<div class="stamp ${i < display ? "filled" : ""}">${i < display ? "K" : i+1}</div>`).join("")}</div>
     <div class="progress-track"><div class="progress-bar" style="width:${Math.min(100, balance / nextTier * 100)}%"></div></div>
-    <p class="muted small">4個印花可換全單9折；8個可換85折。新印花下次消費先可使用。</p>
+    <p class="muted small">有做服務才計印花：服務＋產品折扣後實收每滿 HK$600 得1印，新印花可用於同一張單。4印9折、8印85折；淨產品消費不適用印花。</p>
   </section>`;
 }
 
@@ -193,19 +199,25 @@ function renderAdminDashboard() {
   const today = localDate(new Date());
   const todayAppointments = state.data.appointments.filter(item => localDate(new Date(item.start_at)) === today);
   const pending = state.data.appointments.filter(item => item.status === "pending");
-  const revenue = state.data.sales.filter(item => localDate(new Date(item.completed_at)) === today).reduce((sum,item) => sum + Number(item.final_amount), 0);
+  const revenue = summarizeRevenue(state.data.sales);
   const members = state.data.profiles.filter(item => item.role === "member");
   return `<div class="grid">
-    <div class="grid cols-4">
+    <div class="grid cols-3">
+      ${statCard("今日營業額", formatMoney(revenue.todayRevenue), "按已完成消費的實收金額")}
+      ${statCard("本月營業額", formatMoney(revenue.currentRevenue), `${revenue.currentMonth} · 香港時間`)}
+      ${statCard("上月營業額", formatMoney(revenue.previousRevenue), `${revenue.previousMonth} · 香港時間`)}
       ${statCard("今日預約", todayAppointments.length, `${pending.length} 個待確認`)}
-      ${statCard("今日營業額", formatMoney(revenue), "按已完成消費")}
       ${statCard("會員人數", members.length, "有效會員帳戶")}
-      ${statCard("本月消費", state.data.sales.filter(item => new Date(item.completed_at).getMonth() === new Date().getMonth()).length, "完成交易宗數")}
+      ${statCard("本月消費", revenue.currentCount, "完成交易宗數")}
     </div>
     <div class="grid cols-2">
       <section class="card"><div class="card-head"><h2>待確認預約</h2><button class="text-button" data-view="appointments">管理全部</button></div>${adminAppointmentList(pending.slice(0,5))}</section>
       <section class="card"><div class="card-head"><h2>今日行程</h2><span class="muted small">11:00–21:00</span></div>${adminAppointmentList(todayAppointments.sort((a,b)=>new Date(a.start_at)-new Date(b.start_at)))}</section>
     </div>
+    <section class="card"><div class="card-head"><div><h2>歷月營業額</h2><p class="muted small">按實收金額統計，月份轉換不會清除過往消費。</p></div><button class="button ghost small" data-action="export-data">匯出 Excel</button></div>
+      <div class="table-wrap"><table><thead><tr><th>月份（香港）</th><th>消費宗數</th><th>營業額</th></tr></thead><tbody>${revenue.months.map(item => `<tr><td>${item.month}</td><td>${item.count}</td><td>${formatMoney(item.revenue)}</td></tr>`).join("")}</tbody><tfoot><tr><th>歷來總營業額</th><td></td><th>${formatMoney(revenue.totalRevenue)}</th></tr></tfoot></table></div>
+      ${api.demoMode ? `<p class="demo-note">目前資料只保存在此瀏覽器／裝置，未接駁雲端備份。請定期匯出 Excel；清除網站資料或更換裝置可能令紀錄無法取回。</p>` : ""}
+    </section>
   </div>`;
 }
 
@@ -405,7 +417,8 @@ function saleModal() {
     const initial = catalog.find(item => item.id === appointment?.service_id) || catalog[0];
     if (initial) state.saleItems = [catalogToSaleItem(initial)];
   }
-  const summary = calculateSale(state.saleItems, balance, state.modal.redemption || 0);
+  const birthdayStamps = birthdayStampAward(members.find(item => item.id === selectedMember), state.data.stamps);
+  const summary = calculateSale(state.saleItems, balance, state.modal.redemption || 0, birthdayStamps);
   return `<div class="modal-backdrop"><section class="modal wide"><div class="modal-head"><h2>記錄消費</h2><button class="icon-button" data-action="close-modal">×</button></div>
     <form id="sale-form">
       <div class="form-grid">
@@ -416,9 +429,11 @@ function saleModal() {
       </div>
       <div class="card-head"><h3>消費項目</h3><button class="button ghost small" type="button" data-action="add-sale-item">＋ 新增項目</button></div>
       <div id="sale-items" class="list">${state.saleItems.map((item,index)=>saleItemRow(item,index)).join("")}</div>
-      <label class="field"><span>使用印花（現有 ${balance} 個；新印花不能用於同一張單）</span><select name="requestedRedemption" id="sale-redemption"><option value="0">不使用</option>${balance>=4?`<option value="4" ${state.modal.redemption===4?"selected":""}>4個印花・全單9折</option>`:""}${balance>=8?`<option value="8" ${state.modal.redemption===8?"selected":""}>8個印花・全單85折</option>`:""}</select></label>
-      <div class="sale-summary"><div><span>原價</span><strong>${formatMoney(summary.subtotal)}</strong></div><div><span>${summary.discountLabel}</span><strong>−${formatMoney(summary.discount)}</strong></div><div class="total"><span>實收</span><strong>${formatMoney(summary.finalAmount)}</strong></div><div><span>本次所得印花</span><strong>+${summary.earnedStamps}</strong></div></div>
-      <button class="button primary full" type="submit" ${members.length && stylists.length && state.saleItems.length ? "" : "disabled"}>確認消費、付款及發放印花</button>
+      <label class="field"><span>使用印花（原有 ${balance} 個；${summary.stampEligible?"本單新印花亦可即時使用":"淨產品消費不適用印花"}）</span><select name="requestedRedemption" id="sale-redemption"><option value="0" ${!state.modal.redemption?"selected":""}>不使用</option>${[4,8].map(tier => `<option value="${tier}" ${state.modal.redemption===tier?"selected":""} ${summary.availableRedemptions.includes(tier)?"":"disabled"}>${tier}個印花・全單${tier===4?"9":"85"}折${summary.availableRedemptions.includes(tier)?"":summary.stampEligible?"（折扣後印花不足）":"（淨產品不適用）"}</option>`).join("")}</select></label>
+      <p class="muted small">有做服務：服務＋產品按折扣後實收每滿 HK$600 得 1 印，不足部分不累積，新印花可於本單使用。淨買產品只享會員95折，不發印花亦不兌換印花優惠。</p>
+      ${summary.redemptionAllowed ? "" : `<p class="demo-note" role="alert">${esc(summary.redemptionError)}</p>`}
+      <div class="sale-summary"><div><span>原價</span><strong>${formatMoney(summary.subtotal)}</strong></div><div><span>${summary.discountLabel}</span><strong>−${formatMoney(summary.discount)}</strong></div><div class="total"><span>實收</span><strong>${formatMoney(summary.finalAmount)}</strong></div><div><span>本次消費所得印花</span><strong>+${summary.earnedStamps}</strong></div>${summary.bonusStamps?`<div><span>生日月份獎賞</span><strong>+${summary.bonusStamps}</strong></div>`:""}<div><span>本次使用印花</span><strong>−${summary.redemption.stamps}</strong></div><div><span>完成後印花結餘</span><strong>${summary.redemptionAllowed?summary.remainingStamps:"請重新選擇優惠"}</strong></div></div>
+      <button class="button primary full" type="submit" ${members.length && stylists.length && state.saleItems.length && summary.redemptionAllowed && summary.subtotal>0 ? "" : "disabled"}>確認消費、付款及發放印花</button>
     </form>
   </section></div>`;
 }
