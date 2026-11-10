@@ -1,5 +1,5 @@
 import { DemoStore } from "./demo-store.js";
-import { toHongKongIso } from "./rules.js";
+import { normalizeBirthday, toHongKongIso } from "./rules.js";
 
 const SESSION_KEY = "khair-supabase-session";
 
@@ -138,11 +138,14 @@ export class KhairApi {
 
   async createMember({ name, phone, email, birthday, referrerId, adminId }) {
     if (this.demoMode) return this.demo.createMember({ name, phone, email, birthday, referrerId, adminId });
+    const monthDay = normalizeBirthday(birthday);
     return this.rpc("create_member", {
       p_name: name,
       p_phone: phone,
       p_email: email || null,
-      p_birthday: birthday || null,
+      // The existing SQL date column requires a year: 2000 is a leap-year
+      // transport placeholder, never a member's birth year or a displayed age.
+      p_birthday: monthDay ? `2000-${monthDay}` : null,
       p_referrer_id: referrerId || null
     });
   }

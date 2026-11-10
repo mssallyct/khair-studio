@@ -27,3 +27,16 @@ test("歷史分頁失敗會報錯，不會以不完整營業額當成功", async
   api.rest = async () => { if (calls++) throw new Error("網絡中斷"); return [{id:"sale-1"}]; };
   await assert.rejects(()=>api.restAll("/sales?order=id.asc"),/網絡中斷/);
 });
+
+test("生日月日兼容既有資料庫日期欄位，不要求用戶出生年份", async () => {
+  const api = createApi();
+  const calls = [];
+  api.rpc = async (name, payload) => { calls.push({ name, payload }); return payload; };
+  await api.createMember({ name: "測試", phone: "21234567", birthday: "02-29" });
+  assert.equal(calls[0].name, "create_member");
+  assert.equal(calls[0].payload.p_birthday, "2000-02-29");
+  await api.createMember({ name: "測試", phone: "21234567", birthday: "" });
+  assert.equal(calls[1].payload.p_birthday, null);
+  await assert.rejects(() => api.createMember({ name: "測試", phone: "21234567", birthday: "04-31" }), /生日/);
+  assert.equal(calls.length, 2);
+});

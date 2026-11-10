@@ -80,6 +80,7 @@ a { color: inherit; }
 .field textarea { min-height: 86px; resize: vertical; }
 .field input:focus, .field select:focus, .field textarea:focus { border-color: var(--sage); box-shadow: 0 0 0 4px rgba(113,130,118,.12); background: #fff; }
 .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 0 14px; }
+.birthday-fields { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 8px; }
 .span-2 { grid-column: 1 / -1; }
 .member-lookup-input { position: relative; }
 .member-lookup-input input { padding-left: 43px; }

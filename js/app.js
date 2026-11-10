@@ -1,5 +1,5 @@
 import { KhairApi } from "./api.js";
-import { APPOINTMENT_LABELS, birthdayStampAward, calculateSale, formatDateTime, formatMoney, generateTimeSlots } from "./rules.js";
+import { APPOINTMENT_LABELS, birthdayDaysInMonth, birthdayFromParts, birthdayStampAward, calculateSale, formatBirthday, formatDateTime, formatMoney, generateTimeSlots, membershipInfo } from "./rules.js";
 import { downloadAdminWorkbook } from "./excel-export.js";
 import { findMembersByPhone, normalizePhoneSearch } from "./member-search.js";
 import { buildMemberDetail } from "./member-detail.js";
@@ -180,8 +180,9 @@ function renderRewards() {
 }
 
 function renderProfile() {
+  const membership = membershipInfo(state.profile);
   return `<div class="grid cols-2"><section class="card"><p class="eyebrow">Member Profile</p><h2>${esc(state.profile.name)}</h2><div class="list">
-    ${profileRow("電郵", state.profile.email)}${profileRow("電話", state.profile.phone || "—")}${profileRow("生日", state.profile.birthday || "—")}${profileRow("介紹編號", state.profile.referral_code || "—")}
+    ${profileRow("電郵", state.profile.email)}${profileRow("電話", state.profile.phone || "—")}${profileRow("生日（月日）", formatBirthday(state.profile.birthday))}${profileRow("入會年份", membership.joinedYear ?? "未記錄")}${profileRow("會員年資", membership.label)}${profileRow("介紹編號", state.profile.referral_code || "—")}
   </div></section><section class="card"><h2>會員優惠</h2><div class="list">${profileRow("髮型產品", "會員95折")}${profileRow("生日月份", "消費額外1印花")}${profileRow("介紹朋友", "朋友首次消費後獲1印花")}</div></section></div>`;
 }
 
@@ -229,7 +230,7 @@ function renderMembers() {
   const members = state.data.profiles.filter(item => item.role === "member");
   return `<section class="card"><div class="card-head"><h2>會員名單</h2><div class="actions"><span class="muted">${members.length} 位會員</span><button class="button small" data-action="new-member">＋ 新增會員</button></div></div>
     <div class="filter-bar"><input id="member-search" placeholder="搜尋姓名、電話或電郵"></div>
-    <div class="table-wrap"><table><thead><tr><th>會員</th><th>電話</th><th>生日</th><th>印花</th><th>介紹編號</th><th>操作</th></tr></thead><tbody id="member-table-body">${members.map(memberRow).join("")}</tbody></table></div>
+    <div class="table-wrap"><table><thead><tr><th>會員</th><th>電話</th><th>生日（月日）</th><th>入會年份</th><th>會員年資</th><th>印花</th><th>介紹編號</th><th>操作</th></tr></thead><tbody id="member-table-body">${members.map(memberRow).join("")}</tbody></table></div>
   </section>`;
 }
 
@@ -237,7 +238,7 @@ function renderMemberDetail() {
   const detail = buildMemberDetail(state.data, state.selectedMemberId);
   if (!detail) return `<section class="card"><button class="text-button" data-view="members">← 返回會員名單</button>${empty("找不到此會員資料")}</section>`;
   const { member, appointments, sales, stamps, balance, totalSpend, referrer, referredMembers, rewardedReferralCount } = detail;
-  const memberSince = member.created_at ? formatDateTime(member.created_at) : "—";
+  const membership = membershipInfo(member);
   const referralNames = referredMembers.length ? referredMembers.map(item => item.name).join("、") : "未有介紹會員";
   return `<div class="grid member-detail-page">
     <section class="card member-profile-hero">
@@ -255,8 +256,8 @@ function renderMemberDetail() {
     </div>
     <div class="grid cols-2">
       <section class="card"><div class="card-head"><h2>基本資料</h2><span class="badge active">有效會員</span></div><div class="list">
-        ${profileRow("姓名", member.name)}${profileRow("電話", member.phone || "—")}${profileRow("電郵", member.email || "—")}${profileRow("生日", member.birthday || "—")}${profileRow("會員編號", member.referral_code || "—")}${profileRow("加入日期", memberSince)}
-      </div></section>
+        ${profileRow("姓名", member.name)}${profileRow("電話", member.phone || "—")}${profileRow("電郵", member.email || "—")}${profileRow("生日（月日）", formatBirthday(member.birthday))}${profileRow("會員編號", member.referral_code || "—")}${profileRow("入會日期", membership.joinedDate || "未記錄")}${profileRow("入會年份", membership.joinedYear ?? "未記錄")}${profileRow("會員年資", membership.label)}
+      </div><p class="muted small">年資按已記錄的入會日期及香港日期自動計算已滿年、月；未有日期不會估算。</p></section>
       <section class="card"><div class="card-head"><h2>介紹紀錄</h2></div><div class="list">
         ${profileRow("介紹人", referrer ? `${referrer.name} · ${referrer.phone || "未有電話"}` : "沒有介紹人")}${profileRow("已介紹會員人數", String(referredMembers.length))}${profileRow("已獲介紹印花", String(rewardedReferralCount))}${profileRow("已介紹會員", referralNames)}
       </div></section>
@@ -394,13 +395,17 @@ function memberModal() {
     <form id="member-form" class="form-grid">
       <label class="field span-2"><span>會員姓名</span><input name="name" required maxlength="80" autocomplete="off"></label>
       <label class="field"><span>香港電話</span><input name="phone" type="tel" inputmode="numeric" required maxlength="13" placeholder="9123 4567" autocomplete="off"></label>
-      <label class="field"><span>生日（選填）</span><input name="birthday" type="date"></label>
+      <div class="field"><span id="member-birthday-label">生日（選填，只需月日）</span><div class="birthday-fields" role="group" aria-labelledby="member-birthday-label"><select name="birthdayMonth" id="member-birthday-month" aria-label="生日月份"><option value="">月份</option>${Array.from({length:12},(_,i)=>`<option value="${i+1}">${i+1}月</option>`).join("")}</select><select name="birthdayDay" id="member-birthday-day" aria-label="生日日期" disabled>${birthdayDayOptions("")}</select></div></div>
       <label class="field span-2"><span>電郵（選填）</span><input name="email" type="email" autocomplete="off" placeholder="沒有可留空"></label>
       ${memberPhoneLookup({ name: "referrerId", inputId: "referrer-member-phone", label: "介紹人（選填，以電話搜尋）" })}
-      <p class="muted small span-2">會員不會獲得登入帳戶；所有資料只由管理員處理。</p>
+      <p class="muted small span-2">生日無需填出生年份。入會日期會在建立會員時自動記錄，年資隨時間累積。會員不會獲得登入帳戶。</p>
       <button class="button primary full span-2" type="submit">建立會員</button>
     </form>
   </section></div>`;
+}
+
+function birthdayDayOptions(month, selected = "") {
+  return `<option value="">日期</option>${Array.from({length:birthdayDaysInMonth(month)},(_,i)=>`<option value="${i+1}" ${Number(selected)===i+1?"selected":""}>${i+1}日</option>`).join("")}`;
 }
 
 function saleModal() {
@@ -472,7 +477,8 @@ function adminAppointmentTable(items) {
 }
 
 function memberRow(item) {
-  return `<tr data-member-search="${esc(`${item.name} ${item.phone || ""} ${item.email || ""}`.toLowerCase())}"><td><button class="member-link" data-action="view-member" data-member="${esc(item.id)}"><strong>${esc(item.name)}</strong><span>${esc(item.email || "未有電郵")}</span></button></td><td>${esc(item.phone||"—")}</td><td>${esc(item.birthday||"—")}</td><td>${memberBalance(item.id)}</td><td>${esc(item.referral_code||"—")}</td><td><div class="actions"><button class="button small" data-action="view-member" data-member="${esc(item.id)}">查看資料</button><button class="button ghost small" data-action="sale-member" data-member="${esc(item.id)}">消費</button><button class="button ghost small" data-action="stamps-member" data-member="${esc(item.id)}">印花</button></div></td></tr>`;
+  const membership = membershipInfo(item);
+  return `<tr data-member-search="${esc(`${item.name} ${item.phone || ""} ${item.email || ""}`.toLowerCase())}"><td><button class="member-link" data-action="view-member" data-member="${esc(item.id)}"><strong>${esc(item.name)}</strong><span>${esc(item.email || "未有電郵")}</span></button></td><td>${esc(item.phone||"—")}</td><td>${esc(formatBirthday(item.birthday))}</td><td>${esc(membership.joinedYear ?? "未記錄")}</td><td>${esc(membership.label)}</td><td>${memberBalance(item.id)}</td><td>${esc(item.referral_code||"—")}</td><td><div class="actions"><button class="button small" data-action="view-member" data-member="${esc(item.id)}">查看資料</button><button class="button ghost small" data-action="sale-member" data-member="${esc(item.id)}">消費</button><button class="button ghost small" data-action="stamps-member" data-member="${esc(item.id)}">印花</button></div></td></tr>`;
 }
 
 function memberSaleHistory(items) {
@@ -498,6 +504,11 @@ function stampLedgerList(items, admin = false) {
 function bindForms() {
   root.querySelector("#login-form")?.addEventListener("submit", onLogin);
   root.querySelector("#member-form")?.addEventListener("submit", onMember);
+  root.querySelector("#member-birthday-month")?.addEventListener("change", event => {
+    const daySelect = root.querySelector("#member-birthday-day");
+    daySelect.innerHTML = birthdayDayOptions(event.target.value, daySelect.value);
+    daySelect.disabled = !event.target.value;
+  });
   root.querySelector("#appointment-form")?.addEventListener("submit", onAdminAppointment);
   root.querySelector("#catalog-form")?.addEventListener("submit", onCatalogItem);
   root.querySelector("#stylist-form")?.addEventListener("submit", onStylist);
@@ -596,7 +607,8 @@ async function onMember(event) {
     return;
   }
   await busy(event.submitter, async () => {
-    await api.createMember({...form,adminId:state.profile.id});
+    const birthday = birthdayFromParts(form.birthdayMonth, form.birthdayDay);
+    await api.createMember({...form,birthday,adminId:state.profile.id});
     state.modal=null;
     toast("新會員已建立。");
     await refresh();

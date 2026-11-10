@@ -1,4 +1,4 @@
-import { birthdayStampAward, calculateSale, hongKongDateKey, isValidBusinessSlot, normalizeHongKongPhone, toHongKongIso } from "./rules.js";
+import { birthdayStampAward, calculateSale, hongKongDateKey, isValidBusinessSlot, normalizeBirthday, normalizeHongKongPhone, toHongKongIso } from "./rules.js";
 
 const STORAGE_KEY = "khair-demo-v1";
 const CREDENTIALS_KEY = "khair-admin-credentials-v2";
@@ -116,11 +116,12 @@ export class DemoStore {
     const actor = this.actor();
     const normalizedPhone = normalizeHongKongPhone(phone);
     const normalizedEmail = String(email || "").trim().toLowerCase();
+    const normalizedBirthday = normalizeBirthday(birthday);
     const memberName = String(name || "").trim();
     if (!memberName) throw new Error("請輸入會員姓名。");
     if (this.data.profiles.some(item => item.role === "member" && String(item.phone || "").replace(/\D/g, "") === normalizedPhone.replace(/\D/g, ""))) throw new Error("此電話已登記會員。");
     if (normalizedEmail && this.data.profiles.some(item => String(item.email || "").toLowerCase() === normalizedEmail)) throw new Error("此電郵已登記。");
-    const profile = { id: this.id("member"), email: normalizedEmail || null, name: memberName, phone: normalizedPhone, birthday: birthday || null, referral_code: randomCode(memberName), role: "member", active: true, created_by: actor.id, created_at: new Date().toISOString() };
+    const profile = { id: this.id("member"), email: normalizedEmail || null, name: memberName, phone: normalizedPhone, birthday: normalizedBirthday, referral_code: randomCode(memberName), role: "member", active: true, created_by: actor.id, created_at: new Date().toISOString() };
     this.data.profiles.push(profile);
     if (referrerId) {
       const referrer = this.data.profiles.find(item => item.id === referrerId && item.role === "member");

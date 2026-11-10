@@ -52,6 +52,19 @@ test("Excel 包含由第一宗至今的所有營業額、歷月及累計實收",
   assert.match(files.get("xl/worksheets/sheet4.xml"),/sale-history-0</);
 });
 
+test("會員Excel顯示生日月日、入會年份和匯出當日年資，不估算缺失日期", () => {
+  const data = { profiles: [
+    { id: "old", role: "member", name: "舊會員", birthday: "1990-11-10", created_at: "2023-11-09T16:00:00Z" },
+    { id: "new", role: "member", name: "閏日會員", birthday: "02-29" }
+  ] };
+  const before = JSON.stringify(data);
+  const files = unzipStoredFiles(buildAdminWorkbook(data, new Date("2026-11-09T16:00:00Z")));
+  const members = files.get("xl/worksheets/sheet2.xml");
+  for (const label of ["生日（月日）", "11月10日", "2月29日", "入會年份", "會員年資（截至匯出日）", "2023", "3年0個月", "未記錄"]) assert.ok(members.includes(label));
+  assert.doesNotMatch(members, /1990/);
+  assert.equal(JSON.stringify(data), before);
+});
+
 function unzipStoredFiles(bytes) {
   const files = new Map();
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);

@@ -1,4 +1,5 @@
 import { summarizeRevenue } from "./revenue.js";
+import { formatBirthday, membershipInfo } from "./rules.js";
 
 const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 const encoder = new TextEncoder();
@@ -76,8 +77,11 @@ function buildSheets(data, exportedAt) {
     },
     {
       name: "會員",
-      headers: ["會員編號", "姓名", "香港電話", "電郵", "生日", "介紹編號", "印花結餘", "狀態", "建立者", "建立時間"],
-      rows: members.map(item => [item.id, item.name, item.phone || "", item.email || "", dateOnly(item.birthday), item.referral_code || "", integer(balance(item.id)), item.active === false ? "停用" : "有效", adminName(item.created_by), dateTime(item.created_at)])
+      headers: ["會員編號", "姓名", "香港電話", "電郵", "生日（月日）", "介紹編號", "印花結餘", "狀態", "建立者", "建立時間", "入會年份", "會員年資（截至匯出日）"],
+      rows: members.map(item => {
+        const membership = membershipInfo(item, exportedAt);
+        return [item.id, item.name, item.phone || "", item.email || "", formatBirthday(item.birthday), item.referral_code || "", integer(balance(item.id)), item.active === false ? "停用" : "有效", adminName(item.created_by), dateTime(item.created_at), membership.joinedYear === null ? "未記錄" : integer(membership.joinedYear), membership.label];
+      })
     },
     {
       name: "預約",

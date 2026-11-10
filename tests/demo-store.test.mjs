@@ -86,6 +86,35 @@ test("管理員可新增香港會員及設定介紹人", async () => {
   await assert.rejects(() => store.createMember({ name: "重複測試會員", phone: "20000000", adminId: "admin-tester" }), /電話已登記/);
 });
 
+test("新會員儲存生日月日與固定入會時間，錯誤生日不寫入資料", async () => {
+  localStorage.clear();
+  const store = await createAuthenticatedStore();
+  const member = await store.createMember({ name: "月日會員", phone: "21234567", birthday: "02-29" });
+  assert.equal(member.birthday, "02-29");
+  assert.ok(member.created_at);
+  assert.equal(store.data.auditLog.at(-1).actor_username, "tester");
+  const before = JSON.stringify(store.data);
+  await assert.rejects(() => store.createMember({ name: "無效生日", phone: "21234568", birthday: "02-30" }), /生日/);
+  assert.equal(JSON.stringify(store.data), before);
+  const reopened = createStore();
+  const restored = reopened.data.profiles.find(row => row.id === member.id);
+  assert.equal(restored.created_at, member.created_at);
+  assert.equal(restored.birthday, "02-29");
+});
+
+test("舊生日及舊入會日期原樣保留，缺失日期不會由升級補成今日", async () => {
+  localStorage.clear();
+  const store = await createAuthenticatedStore();
+  Object.assign(store.data.profiles.find(row => row.id === "member-1"), { birthday: "1990-11-10", created_at: "2020-01-01T03:00:00Z" });
+  delete store.data.profiles.find(row => row.id === "member-2").created_at;
+  store.save();
+  const reopened = createStore();
+  const old = reopened.data.profiles.find(row => row.id === "member-1");
+  assert.equal(old.birthday, "1990-11-10");
+  assert.equal(old.created_at, "2020-01-01T03:00:00Z");
+  assert.equal(reopened.data.profiles.find(row => row.id === "member-2").created_at, undefined);
+});
+
 test("管理員可新增服務項目及已確認預約", async () => {
   localStorage.clear();
   const store = await createAuthenticatedStore();

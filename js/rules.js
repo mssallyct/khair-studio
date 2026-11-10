@@ -88,11 +88,60 @@ export function birthdayStampAward(profile, ledger = [], saleDate = new Date()) 
 }
 
 export function isBirthdayMonth(birthday, saleDate = new Date()) {
-  if (!birthday) return false;
-  const match = /^\d{4}-(\d{2})-\d{2}$/.exec(String(birthday));
-  if (!match || Number(match[1]) < 1 || Number(match[1]) > 12) return false;
-  const saleMonth = Number(new Intl.DateTimeFormat("en", { month: "numeric", timeZone: "Asia/Hong_Kong" }).format(saleDate));
-  return Number(match[1]) === saleMonth;
+  const parts = birthdayParts(birthday);
+  const saleDay = hongKongDateKey(saleDate);
+  return !!parts && !!saleDay && parts.month === Number(saleDay.slice(5, 7));
+}
+
+export function birthdayDaysInMonth(month) {
+  return [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][Number(month) - 1] || 0;
+}
+
+function birthdayParts(value) {
+  // Accept existing full dates without rewriting them; new birthdays use MM-DD.
+  const match = /^(?:\d{4}-)?(\d{2})-(\d{2})$/.exec(String(value || "").trim());
+  if (!match) return null;
+  const month = Number(match[1]);
+  const day = Number(match[2]);
+  return day >= 1 && day <= birthdayDaysInMonth(month) ? { month, day } : null;
+}
+
+export function normalizeBirthday(value) {
+  if (value == null || String(value).trim() === "") return null;
+  const parts = birthdayParts(value);
+  if (!parts) throw new Error("請選擇有效的生日月份及日期。");
+  return `${String(parts.month).padStart(2, "0")}-${String(parts.day).padStart(2, "0")}`;
+}
+
+export function birthdayFromParts(month, day) {
+  const m = String(month ?? "").trim();
+  const d = String(day ?? "").trim();
+  if (!m && !d) return null;
+  if (!/^\d{1,2}$/.test(m) || !/^\d{1,2}$/.test(d)) throw new Error("請同時選擇生日月份及日期，或兩項都留空。");
+  return normalizeBirthday(`${m.padStart(2, "0")}-${d.padStart(2, "0")}`);
+}
+
+export function formatBirthday(value) {
+  const parts = birthdayParts(value);
+  return parts ? `${parts.month}月${parts.day}日` : "未記錄";
+}
+
+export function membershipInfo(profile, asOf = new Date()) {
+  // Calculate from the original registration timestamp, never from a version
+  // upgrade or the current date. Missing historical dates remain unknown.
+  const joinedDate = hongKongDateKey(profile?.created_at);
+  const today = hongKongDateKey(asOf);
+  const result = { joinedDate, joinedYear: joinedDate ? Number(joinedDate.slice(0, 4)) : null, years: null, months: null, label: "未記錄" };
+  if (!joinedDate || !today) return result;
+  if (joinedDate > today) return { ...result, label: "入會日期待核對" };
+  const [year, month, day] = joinedDate.split("-").map(Number);
+  const [nowYear, nowMonth, nowDay] = today.split("-").map(Number);
+  // Month-end / 29 February anniversaries fall on the last day of a shorter month.
+  const anniversaryDay = Math.min(day, new Date(Date.UTC(nowYear, nowMonth, 0)).getUTCDate());
+  const totalMonths = (nowYear - year) * 12 + nowMonth - month - (nowDay < anniversaryDay ? 1 : 0);
+  const years = Math.floor(totalMonths / 12);
+  const months = totalMonths % 12;
+  return { ...result, years, months, label: totalMonths === 0 ? "未滿1個月" : `${years}年${months}個月` };
 }
 
 export function normalizeHongKongPhone(value) {
