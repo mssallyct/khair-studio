@@ -1,10 +1,13 @@
 import { DemoStore } from "./demo-store.js";
 import { normalizeBirthday, toHongKongIso } from "./rules.js";
+import { BackendApi } from "./backend-api.js";
 
 const SESSION_KEY = "khair-supabase-session";
 
 export class KhairApi {
   constructor(config = {}) {
+    if(config.backendUrl) return new BackendApi(config);
+    if(config.requiresBackend) throw new Error("後端尚未設定，已停止載入；不會轉用本機示範資料。");
     this.config = config;
     this.demoMode = config.demoMode !== false || !config.supabaseUrl || !config.supabaseAnonKey;
     this.demo = this.demoMode ? new DemoStore() : null;
@@ -136,8 +139,9 @@ export class KhairApi {
     return { profiles, appointments, sales, saleItems, stamps, referrals, auditLog: [], catalog, stylists, assistants, settings };
   }
 
-  async createMember({ name, phone, email, birthday, referrerId, adminId }) {
-    if (this.demoMode) return this.demo.createMember({ name, phone, email, birthday, referrerId, adminId });
+  async createMember({ name, phone, email, birthday, referrerId, adminId, joinedDate }) {
+    if (this.demoMode) return this.demo.createMember({ name, phone, email, birthday, referrerId, adminId, joinedDate });
+    if (joinedDate) throw new Error("新版入會日期尚待後端更新；未有建立會員。");
     const monthDay = normalizeBirthday(birthday);
     return this.rpc("create_member", {
       p_name: name,

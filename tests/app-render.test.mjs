@@ -6,14 +6,19 @@ import * as rules from "../js/rules.js";
 import { summarizeRevenue } from "../js/revenue.js";
 import { buildMemberDetail } from "../js/member-detail.js";
 import { buildServiceCatalog } from "../js/service-catalog.js";
+import * as access from "../js/access-policy.js";
+import * as rewardViews from "../js/reward-views.js";
+import { createRewardWallet, quoteRewards, rewardStatus } from "../js/loyalty-v2.js";
+import { webcrypto } from "node:crypto";
 
 // Exercise the real HTML render functions without opening any browser or
 // touching a user's session/storage. DOM event bindings are inert test doubles.
 const source = readFileSync(new URL("../js/app.js",import.meta.url),"utf8").replace(/^import .*;\n/gm,"").replace("boot();","");
 function renderContext() {
   const root = {addEventListener() {}};
-  const context = createContext({...rules,summarizeRevenue,buildMemberDetail,document:{querySelector:()=>root}});
+  const context = createContext({...rules,...access,...rewardViews,quoteRewards,rewardStatus,crypto:webcrypto,structuredClone,summarizeRevenue,buildMemberDetail,document:{querySelector:()=>root}});
   runInContext(source,context);
+  runInContext('state.profile={id:"admin-howood",username:"howood",name:"Howood",role:"admin",active:true};',context);
   runInContext(`api={demoMode:true}; state.data={profiles:[{id:"member-1",name:"測試會員",role:"member"}],appointments:[],sales:[],catalog:[{id:"svc",kind:"service",name:"護理",price:600,active:true}],stylists:[{id:"sty-a",name:"髮型師",active:true}],assistants:[],stamps:[{member_id:"member-1",delta:3}]}; state.modal={type:"sale",memberId:"member-1",redemption:4}; state.saleItems=[{catalogId:"svc",kind:"service",name:"護理",quantity:1,unitPrice:600}];`,context);
   return context;
 }
@@ -63,11 +68,62 @@ test("新增會員生日只有月日選單，二月可選29日而不可選30日"
   const html = runInContext("memberModal()", context);
   assert.match(html, /name="birthdayMonth"/);
   assert.match(html, /name="birthdayDay"/);
-  assert.doesNotMatch(html, /name="birthday"|name="birthdayYear"|type="date"/);
+  assert.doesNotMatch(html, /name="birthday"|name="birthdayYear"/);
+  assert.match(html, /name="joinedDate" type="date" required/);
   const february = runInContext('birthdayDayOptions("2", "29")', context);
   assert.match(february, /value="29" selected/);
   assert.doesNotMatch(february, /value="30"/);
   assert.doesNotMatch(runInContext('birthdayDayOptions("4")', context), /value="31"/);
+});
+
+test("五個新管理員首頁只保留待確認及今日行程，不能直入設定或操作記錄",()=>{
+  const context=renderContext();
+  for(const username of ["admin135","admin268","admin567","admin889","admin233"]){
+    context.username=username;runInContext('state.profile={id:username,username,name:username,role:"admin",active:true};',context);
+    const home=runInContext("renderAdminDashboard()",context);
+    for(const title of ["待確認預約","今日行程"])assert.ok(home.includes(title));
+    for(const title of ["營業額","會員人數","本月消費","印花到期"])assert.ok(!home.includes(title));
+    for(const fn of ["renderSettings()","renderAuditLog()"]){assert.match(runInContext(fn,context),/沒有此頁面權限/);}
+    const app=runInContext("renderApp()",context);assert.doesNotMatch(app,/data-view="(?:settings|audit)"|data-action="export-data"/);
+  }
+});
+
+test("後端結帳畫面即時使用第4印優惠，但進度不扣走，單價由後端控制",()=>{
+  const context=renderContext(),now=new Date();
+  const member={id:"member-1",role:"member",name:"測試會員",joined_date:rules.hongKongDateKey(now)};
+  const wallet=createRewardWallet(member,now);wallet.stampProgress=3;
+  context.wallet=wallet;context.member=member;
+  runInContext('api.backendMode=true;state.data.profiles=[member];state.data.rewardWallets={"member-1":wallet};state.modal.requestId="checkout-ui-test-123";',context);
+  const initial=runInContext("saleModal()",context);assert.match(initial,/4印花・9折/);
+  const id=runInContext("backendSaleQuote(null).addedCoupons[0].id",context);context.coupon=id;
+  runInContext("state.modal.couponId=coupon;",context);
+  const html=runInContext("saleModal()",context);
+  assert.ok(html.includes(rules.formatMoney(540)));assert.match(html,/本輪印花進度<\/span><strong>4／8/);assert.match(html,/data-sale-field="unitPrice"[^>]+readonly/);
+  assert.equal(wallet.stampProgress,3);assert.equal(Object.keys(wallet.receipts).length,0);
+  runInContext('state.modal.couponId="expired";',context);assert.match(runInContext("saleModal()",context),/原優惠不適用，請重新選擇/);
+  runInContext("state.modal.couponId=null;",context);assert.doesNotMatch(runInContext("saleModal()",context),/原優惠不適用/);
+});
+
+test("後端剪吹第10次顯示9折而零印花，重畫不多加次數",()=>{
+  const context=renderContext(),now=new Date(),wallet=createRewardWallet({id:"member-1",joined_date:rules.hongKongDateKey(now)},now);wallet.hairVisits=9;
+  context.wallet=wallet;
+  runInContext('api.backendMode=true;state.data.rewardWallets={"member-1":wallet};state.data.catalog=[{id:"svc-20261119-01",kind:"service",name:"洗剪吹",price:168,active:true}];state.saleItems=[catalogToSaleItem(state.data.catalog[0])];state.modal.requestId="haircut-ui-test-123";',context);
+  assert.match(runInContext("saleModal()",context),/剪吹10次・9折/);
+  runInContext("state.modal.couponId=backendSaleQuote(null).addedCoupons[0].id;",context);
+  const html=runInContext("saleModal()",context);assert.ok(html.includes(rules.formatMoney(151.2)));assert.match(html,/新增印花<\/span><strong>\+0/);assert.match(html,/剪吹累積次數<\/span><strong>0／10/);
+  runInContext("saleModal()",context);assert.equal(wallet.hairVisits,9);
+});
+
+test("會員頁和主管首頁顯示14天到期提示，但員工首頁仍僅兩區",()=>{
+  const context=renderContext();
+  const now=new Date(),today=rules.hongKongDateKey(now);const year=Number(today.slice(0,4));
+  const due=new Date(`${today}T00:00:00Z`);due.setUTCDate(due.getUTCDate()+10);
+  const join=`${year-1}-${due.toISOString().slice(5,10)}`;
+  const m={id:"member-1",name:"到期會員",role:"member",joined_date:join};
+  const wallet=createRewardWallet(m,now);wallet.stampProgress=2;
+  context.expiryMember=m;context.expiryWallet=wallet;
+  runInContext('state.data.profiles=[expiryMember];state.data.rewardWallets={"member-1":expiryWallet};state.selectedMemberId="member-1";',context);
+  for(const fn of ["renderAdminDashboard()","renderMembers()","renderMemberDetail()"]){assert.match(runInContext(fn,context),/到期/);}
 });
 
 test("會員名單及詳情顯示入會年份和自動年資，舊生日不顯示出生年份", () => {
