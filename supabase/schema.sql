@@ -437,9 +437,37 @@ insert into public.stylists(name) select x from unnest(array['Hair Stylist A','H
 insert into public.assistants(name) select x from unnest(array['Hair Assistant A','Hair Assistant B']) x where not exists(select 1 from public.assistants);
 insert into public.catalog(name,kind,price,duration_minutes,sort_order)
 select * from (values
-  ('洗剪吹','service'::public.catalog_kind,280,60,10),('單剪','service',180,30,20),('洗吹造型','service',180,60,30),
-  ('染髮','service',780,120,40),('電髮','service',980,150,50),('頭髮護理','service',480,60,60),
-  ('專業洗髮水','product',260,0,100)
+  ('洗剪吹','service'::public.catalog_kind,168,60,10),
+  ('洗吹造型','service',108,60,20),
+  ('單剪','service',130,30,30),
+  ('染髮（加長收費）','service',175,120,40),
+  ('染髮（IDA）','service',398,120,50),
+  ('染髮（Shiseido）','service',658,120,60),
+  ('染髮（Milbon）','service',758,120,70),
+  ('漂染（挑染）','service',150,120,80),
+  ('漂染（漂髮）','service',200,120,90),
+  ('漂染（漂髮/漸變）','service',250,120,100),
+  ('漂染（漂髮）','service',300,120,110),
+  ('電髮（髮根燙/上直下曲）','service',200,150,120),
+  ('電髮（冷燙）','service',498,150,130),
+  ('電髮（拉直）','service',598,150,140),
+  ('電髮（基本熱燙）','service',698,150,150),
+  ('電髮（冷燙）','service',708,150,160),
+  ('電髮（冷燙）','service',808,150,170),
+  ('電髮（ATS拉直）','service',798,150,180),
+  ('電髮（Shiseido拉直/ATS熱燙）','service',898,150,190),
+  ('電髮（Shiseido 熱燙）','service',998,150,200),
+  ('電髮（直療）','service',1098,150,210),
+  ('電髮（熱療）','service',1198,150,220),
+  ('頭髮護理（強韌劑）','service',180,60,230),
+  ('頭髮護理（電前護理）','service',190,60,240),
+  ('頭髮護理（髮膜）','service',200,60,250),
+  ('頭髮護理（補水焗油）','service',350,60,260),
+  ('頭髮護理（頭皮護理）','service',370,60,270),
+  ('頭髮護理（Milbon）','service',650,60,280),
+  ('頭髮護理（Milbon Color Preserve）','service',780,60,290),
+  ('頭髮護理（角蛋白修護）','service',1098,60,300),
+  ('專業洗髮水','product',260,0,1000)
 ) v(name,kind,price,duration_minutes,sort_order) where not exists(select 1 from public.catalog);
 
 insert into public.settings(key,value) values

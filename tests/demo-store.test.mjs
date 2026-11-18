@@ -128,7 +128,9 @@ test("管理員可新增服務項目及已確認預約", async () => {
   assert.equal(appointment.service_id, item.id);
   assert.equal(store.data.auditLog.at(-1).actor_username, "tester");
   assert.equal(store.data.auditLog.at(-1).action, "appointment.created");
-  await assert.rejects(() => store.createCatalogItem({ name: "新護理療程", kind: "service", price: 700, durationMinutes: 60 }), /已存在/);
+  await assert.rejects(() => store.createCatalogItem({ name: "新護理療程", kind: "service", price: 680, durationMinutes: 60 }), /已存在/);
+  const otherPrice = await store.createCatalogItem({ name: "新護理療程", kind: "service", price: 700, durationMinutes: 60 });
+  assert.equal(otherPrice.price, 700);
 });
 
 test("服務及產品可修改及安全刪除並保留歷史資料", async () => {

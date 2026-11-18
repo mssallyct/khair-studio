@@ -1,4 +1,5 @@
 import { birthdayStampAward, calculateSale, hongKongDateKey, isValidBusinessSlot, normalizeBirthday, normalizeHongKongPhone, toHongKongIso } from "./rules.js";
+import { buildServiceCatalog, prepareServiceCatalogUpdate, SERVICE_CATALOG_BACKUP_KEY, SERVICE_CATALOG_REVISION } from "./service-catalog.js";
 
 const STORAGE_KEY = "khair-demo-v1";
 const CREDENTIALS_KEY = "khair-admin-credentials-v2";
@@ -105,7 +106,32 @@ export class DemoStore {
     const profile = this.data.profiles.find(item => item.id === account.profileId && item.role === "admin" && item.active);
     if (!profile) throw new Error("此管理員帳戶已停用。");
     this.session = { access_token: "demo", user: { id: profile.id, username: normalizedUsername } };
+    try { this.applyServiceCatalogUpdate(); }
+    catch (error) { this.session = null; throw error; }
     return this.session;
+  }
+
+  applyServiceCatalogUpdate() {
+    const actor = this.actor();
+    const prepared = prepareServiceCatalogUpdate(this.data, actor.id, new Date().toISOString());
+    if (!prepared) return false;
+    // Preserve the entire pre-replacement state locally before the single atomic
+    // main-data write. Never overwrite an existing backup or a newer tab's data.
+    if (localStorage.getItem(STORAGE_KEY) !== this.savedData) throw new Error("資料已由另一個分頁更新，請重新整理網頁後再操作。");
+    try {
+      if (localStorage.getItem(SERVICE_CATALOG_BACKUP_KEY) === null) localStorage.setItem(SERVICE_CATALOG_BACKUP_KEY, this.savedData);
+    } catch {
+      throw new Error("未能備份原有紀錄，已停止價目更新；請勿清除網站資料。");
+    }
+    this.data = prepared.data;
+    try {
+      this.audit({ action: "catalog.replaced", label: "更新服務價目", targetType: "服務清單", targetId: SERVICE_CATALOG_REVISION, summary: `停用 ${prepared.update.archived_count} 個舊服務，加入 ${prepared.update.added_count} 個新服務；產品、過往消費及預約保持原樣。` });
+      this.save();
+    } catch (error) {
+      this.data = JSON.parse(this.savedData);
+      throw error;
+    }
+    return true;
   }
 
   async signUp() {
@@ -176,7 +202,7 @@ export class DemoStore {
     if (!itemName) throw new Error("請輸入項目名稱。");
     if (!Number.isFinite(itemPrice) || itemPrice < 0) throw new Error("請輸入有效價格。");
     if (itemKind === "service" && (!Number.isInteger(duration) || duration < 30 || duration % 30 !== 0)) throw new Error("服務時間必須以30分鐘為單位。");
-    if (this.data.catalog.some(item => item.id !== excludeId && item.active !== false && item.name.trim().toLowerCase() === itemName.toLowerCase())) throw new Error("此項目名稱已存在。");
+    if (this.data.catalog.some(item => item.id !== excludeId && item.active !== false && item.kind === itemKind && item.name.trim().toLowerCase() === itemName.toLowerCase() && Number(item.price) === itemPrice)) throw new Error("同名稱及價錢的項目已存在。");
     return { name: itemName, kind: itemKind, price: itemPrice, duration_minutes: duration };
   }
 
@@ -277,6 +303,7 @@ export class DemoStore {
       assistants: [...this.data.assistants].sort((a,b) => a.name.localeCompare(b.name, "zh-HK")),
       settings: [
         { key: "business_hours", value: { open: "11:00", close: "21:00", days: [1,2,3,4,5,6,0] } },
+        { key: "service_catalog_update", value: this.data.catalogUpdates?.[SERVICE_CATALOG_REVISION] || null },
         { key: "stamp_rules", value: { threshold: 600, four_stamp_discount: 0.10, eight_stamp_discount: 0.15, product_member_discount: 0.05, same_sale_redemption: true, earning_basis: "before_stamp_discount", service_required: true } }
       ]
     };
@@ -309,6 +336,7 @@ export class DemoStore {
     const profile = this.data.profiles.find(item => item.id === memberId && item.role === "member" && item.active !== false);
     if (!profile) throw new Error("找不到會員。");
     if (!Array.isArray(items) || !items.length || items.some(item => !Number.isInteger(Number(item.quantity)) || Number(item.quantity) <= 0 || !Number.isFinite(Number(item.unitPrice)) || Number(item.unitPrice) < 0)) throw new Error("請檢查消費項目的數量及單價。");
+    if (items.some(item => item.catalogId != null && !this.data.catalog.some(row => row.id === item.catalogId && row.active !== false))) throw new Error("請為所有消費項目選擇現行服務或產品。");
     const appointment = appointmentId ? this.data.appointments.find(item => item.id === appointmentId && item.member_id === memberId) : null;
     if (appointmentId && !appointment) throw new Error("找不到此會員的相關預約。");
     const selectedStylistId = stylistId || appointment?.stylist_id;
@@ -438,18 +466,14 @@ function seedData(accounts) {
       { id: "assistant-a", name: "Hair Assistant A", active: true },
       { id: "assistant-b", name: "Hair Assistant B", active: true }
     ],
+    catalogUpdates: { [SERVICE_CATALOG_REVISION]: { applied_at: now.toISOString(), applied_by: null, archived_count: 0, added_count: 30, source: "initial_catalog" } },
     catalog: [
-      { id: "svc-cut", name: "洗剪吹", kind: "service", price: 280, duration_minutes: 60, active: true },
-      { id: "svc-trim", name: "單剪", kind: "service", price: 180, duration_minutes: 30, active: true },
-      { id: "svc-style", name: "洗吹造型", kind: "service", price: 180, duration_minutes: 60, active: true },
-      { id: "svc-color", name: "染髮", kind: "service", price: 780, duration_minutes: 120, active: true },
-      { id: "svc-perm", name: "電髮", kind: "service", price: 980, duration_minutes: 150, active: true },
-      { id: "svc-care", name: "頭髮護理", kind: "service", price: 480, duration_minutes: 60, active: true },
+      ...buildServiceCatalog([], { createdAt: now.toISOString() }),
       { id: "prd-shampoo", name: "專業洗髮水", kind: "product", price: 260, duration_minutes: 0, active: true }
     ],
     appointments: [
-      { id: "apt-1", member_id: "member-1", stylist_id: "sty-a", service_id: "svc-cut", start_at: isoAt(tomorrow, 13), end_at: isoAt(tomorrow, 14), status: "pending", note: "", created_at: now.toISOString() },
-      { id: "apt-2", member_id: "member-2", stylist_id: "sty-b", service_id: "svc-color", start_at: isoAt(dayAfter, 15), end_at: isoAt(dayAfter, 17), status: "confirmed", note: "", created_at: now.toISOString() }
+      { id: "apt-1", member_id: "member-1", stylist_id: "sty-a", service_id: "svc-20261119-01", start_at: isoAt(tomorrow, 13), end_at: isoAt(tomorrow, 14), status: "pending", note: "", created_at: now.toISOString() },
+      { id: "apt-2", member_id: "member-2", stylist_id: "sty-b", service_id: "svc-20261119-05", start_at: isoAt(dayAfter, 15), end_at: isoAt(dayAfter, 17), status: "confirmed", note: "", created_at: now.toISOString() }
     ],
     sales: [], saleItems: [], referrals: [],
     auditLog: [],

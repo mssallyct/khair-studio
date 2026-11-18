@@ -156,7 +156,7 @@ function stampCard() {
 }
 
 function renderBooking() {
-  const services = state.data.catalog.filter(item => item.kind === "service");
+  const services = activeCatalogItems().filter(item => item.kind === "service");
   const first = services[0];
   return `<section class="card">
     <div class="card-head"><div><p class="eyebrow">New Appointment</p><h2>選擇預約資料</h2></div><span class="badge pending">預約後待確認</span></div>
@@ -282,7 +282,7 @@ function renderSettings() {
   const stylists = activeStylistItems();
   const assistants = activeAssistantItems();
   return `<div class="grid cols-2">
-    <section class="card"><div class="card-head"><h2>服務及產品</h2><button class="button small" data-action="new-catalog-item">＋ 新增項目</button></div>${catalog.length ? `<div class="list">${catalog.map(item => `<div class="list-item"><div class="list-item-main"><strong>${esc(item.name)}</strong><span>${item.kind === "product" ? "髮型產品" : `${item.duration_minutes}分鐘`}</span></div><div class="list-item-side"><strong>${formatMoney(item.price)}</strong><div class="actions catalog-actions"><button class="button ghost small" data-action="edit-catalog-item" data-id="${esc(item.id)}">修改</button><button class="button ghost small catalog-delete" data-action="delete-catalog-item" data-id="${esc(item.id)}">刪除</button></div></div></div>`).join("")}</div>` : empty("暫時未有服務或產品")}</section>
+    <section class="card"><div class="card-head"><h2>服務及產品</h2><button class="button small" data-action="new-catalog-item">＋ 新增項目</button></div><p class="muted small">舊服務只停用，不刪除過往消費。新價目時長暫沿用原有分類設定（漂染沿用染髮），可按需要修改。</p>${catalog.length ? `<div class="list">${catalog.map(item => `<div class="list-item"><div class="list-item-main"><strong>${esc(item.name)}</strong><span>${item.kind === "product" ? "髮型產品" : `${item.duration_minutes}分鐘`}</span></div><div class="list-item-side"><strong>${formatMoney(item.price)}</strong><div class="actions catalog-actions"><button class="button ghost small" data-action="edit-catalog-item" data-id="${esc(item.id)}">修改</button><button class="button ghost small catalog-delete" data-action="delete-catalog-item" data-id="${esc(item.id)}">刪除</button></div></div></div>`).join("")}</div>` : empty("暫時未有服務或產品")}</section>
     <section class="card"><div class="card-head"><div><h2>髮型師</h2><span class="muted small">預約及消費跟進人員</span></div><button class="button small" data-action="new-stylist">＋ 新增髮型師</button></div>${stylists.length ? `<div class="list">${stylists.map(item => `<div class="list-item"><div class="list-item-main"><strong>${esc(item.name)}</strong><span>服務中</span></div><div class="list-item-side"><span class="badge active">服務中</span><div class="actions catalog-actions"><button class="button ghost small catalog-delete" data-action="delete-stylist" data-id="${esc(item.id)}">刪除</button></div></div></div>`).join("")}</div>` : empty("暫時未有髮型師")}</section>
     <section class="card"><div class="card-head"><div><h2>髮型助理</h2><span class="muted small">消費跟進時可選填</span></div><button class="button small" data-action="new-assistant">＋ 新增髮型助理</button></div>${assistants.length ? `<div class="list">${assistants.map(item => `<div class="list-item"><div class="list-item-main"><strong>${esc(item.name)}</strong><span>服務中</span></div><div class="list-item-side"><span class="badge active">服務中</span><div class="actions catalog-actions"><button class="button ghost small catalog-delete" data-action="delete-assistant" data-id="${esc(item.id)}">刪除</button></div></div></div>`).join("")}</div>` : empty("暫時未有髮型助理")}</section>
   </div>`;
@@ -417,11 +417,18 @@ function saleModal() {
   const assistants = activeAssistantItems();
   const selectedStylist = state.modal.stylistId || appointment?.stylist_id || stylists[0]?.id || "";
   const selectedAssistant = state.modal.assistantId || "";
+  const appointmentService = appointment ? activeCatalogItems().find(item => item.id === appointment.service_id) : null;
   if (!state.saleItems.length) {
     const catalog = activeCatalogItems();
-    const initial = catalog.find(item => item.id === appointment?.service_id) || catalog[0];
-    if (initial) state.saleItems = [catalogToSaleItem(initial)];
+    // Never expose archived services in a selection or silently substitute a
+    // different service for an old booking. Require an explicit current choice.
+    if (appointment && !appointmentService) state.saleItems = [{ catalogId: "", kind: "service", name: "", quantity: 1, unitPrice: 0 }];
+    else {
+      const initial = appointmentService || catalog[0];
+      if (initial) state.saleItems = [catalogToSaleItem(initial)];
+    }
   }
+  const hasUnselectedItem = state.saleItems.some(item => !activeCatalogItems().some(row => row.id === item.catalogId));
   const birthdayStamps = birthdayStampAward(members.find(item => item.id === selectedMember), state.data.stamps);
   const summary = calculateSale(state.saleItems, balance, state.modal.redemption || 0, birthdayStamps);
   return `<div class="modal-backdrop"><section class="modal wide"><div class="modal-head"><h2>記錄消費</h2><button class="icon-button" data-action="close-modal">×</button></div>
@@ -433,12 +440,13 @@ function saleModal() {
         <label class="field"><span>是次跟進髮型助理（選填）</span><select name="assistantId" id="sale-assistant"><option value="">沒有／不適用</option>${assistants.map(item => `<option value="${item.id}" ${item.id===selectedAssistant?"selected":""}>${esc(item.name)}</option>`).join("")}</select></label>
       </div>
       <div class="card-head"><h3>消費項目</h3><button class="button ghost small" type="button" data-action="add-sale-item">＋ 新增項目</button></div>
+      ${appointment && !appointmentService ? `<p class="demo-note">此預約原有項目已停用，請選擇現行項目及確認價錢；原預約及過往消費紀錄不會更改。</p>` : ""}
       <div id="sale-items" class="list">${state.saleItems.map((item,index)=>saleItemRow(item,index)).join("")}</div>
       <label class="field"><span>使用印花（原有 ${balance} 個；${summary.stampEligible?`本次 +${summary.earnedStamps}${summary.bonusStamps?`＋生日獎賞 ${summary.bonusStamps}`:""}，本單可用 ${balance+summary.earnedStamps+summary.bonusStamps} 個`:"淨產品消費不適用印花"}）</span><select name="requestedRedemption" id="sale-redemption"><option value="0" ${!state.modal.redemption?"selected":""}>不使用</option>${[4,8].map(tier => `<option value="${tier}" ${state.modal.redemption===tier?"selected":""} ${summary.availableRedemptions.includes(tier)?"":"disabled"}>${tier}個印花・全單${tier===4?"9":"85"}折${summary.availableRedemptions.includes(tier)?"":summary.stampEligible?"（印花不足）":"（淨產品不適用）"}</option>`).join("")}</select></label>
       <p class="muted small">先按使用印花優惠前的消費金額計印花（產品按會員95折價計），每滿 HK$600 得 1 印，不足部分不累積。本次新印花可立即於本單兌換，不會因兌換折扣而減少已計算的新印花。淨買產品只享會員95折，不發印花亦不兌換印花優惠。</p>
       ${summary.redemptionAllowed ? "" : `<p class="demo-note" role="alert">${esc(summary.redemptionError)}</p>`}
       <div class="sale-summary"><div><span>原價</span><strong>${formatMoney(summary.subtotal)}</strong></div><div><span>${summary.discountLabel}</span><strong>−${formatMoney(summary.discount)}</strong></div><div class="total"><span>實收</span><strong>${formatMoney(summary.finalAmount)}</strong></div><div><span>計印花金額（使用印花優惠前）</span><strong>${summary.stampEligible?formatMoney(summary.stampEarningAmount):"不適用"}</strong></div><div><span>本次消費所得印花</span><strong>+${summary.earnedStamps}</strong></div>${summary.bonusStamps?`<div><span>生日月份獎賞</span><strong>+${summary.bonusStamps}</strong></div>`:""}<div><span>本次使用印花</span><strong>−${summary.redemption.stamps}</strong></div><div><span>完成後印花結餘</span><strong>${summary.redemptionAllowed?summary.remainingStamps:"請重新選擇優惠"}</strong></div></div>
-      <button class="button primary full" type="submit" ${members.length && stylists.length && state.saleItems.length && summary.redemptionAllowed && summary.subtotal>0 ? "" : "disabled"}>確認消費、付款及發放印花</button>
+      <button class="button primary full" type="submit" ${members.length && stylists.length && state.saleItems.length && !hasUnselectedItem && summary.redemptionAllowed && summary.subtotal>0 ? "" : "disabled"}>確認消費、付款及發放印花</button>
     </form>
   </section></div>`;
 }
@@ -667,6 +675,10 @@ async function onBooking(event) {
 
 async function onSale(event) {
   event.preventDefault(); const form=Object.fromEntries(new FormData(event.currentTarget));
+  if (state.saleItems.some(item => !activeCatalogItems().some(row => row.id === item.catalogId))) {
+    toast("請為所有消費項目選擇現行服務或產品。", true);
+    return;
+  }
   await busy(event.submitter, async()=>{ await api.completeSale({memberId:form.memberId,appointmentId:form.appointmentId||state.modal.appointmentId,stylistId:form.stylistId,assistantId:form.assistantId||null,items:state.saleItems,requestedRedemption:Number(form.requestedRedemption),adminId:state.profile.id}); state.modal=null; state.saleItems=[]; toast("消費、跟進人員及印花已記錄。"); await refresh(); });
 }
 
@@ -695,7 +707,7 @@ function updateCatalogDuration(event) {
 
 function updateSaleCatalog(event) {
   const index=Number(event.target.dataset.index);
-  const catalogItem=state.data.catalog.find(item=>item.id===event.target.value);
+  const catalogItem=activeCatalogItems().find(item=>item.id===event.target.value);
   if(!catalogItem) return;
   const quantity=state.saleItems[index]?.quantity || 1;
   state.saleItems[index]={...catalogToSaleItem(catalogItem),quantity};
@@ -711,8 +723,9 @@ function catalogToSaleItem(item){return {catalogId:item.id,kind:item.kind,name:i
 function catalogOptions(selectedId){
   const services=activeCatalogItems().filter(item=>item.kind==="service");
   const products=activeCatalogItems().filter(item=>item.kind==="product");
+  const needsSelection=!activeCatalogItems().some(item=>item.id===selectedId);
   const options=items=>items.map(item=>`<option value="${item.id}" ${item.id===selectedId?"selected":""}>${esc(item.name)} · ${formatMoney(item.price)}</option>`).join("");
-  return `${services.length?`<optgroup label="服務">${options(services)}</optgroup>`:""}${products.length?`<optgroup label="產品">${options(products)}</optgroup>`:""}`;
+  return `${needsSelection?`<option value="" selected disabled>請選擇現行項目</option>`:""}${services.length?`<optgroup label="服務">${options(services)}</optgroup>`:""}${products.length?`<optgroup label="產品">${options(products)}</optgroup>`:""}`;
 }
 
 function activeCatalogItems() { return (state.data.catalog || []).filter(item => item.active !== false); }

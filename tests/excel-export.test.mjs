@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { buildAdminWorkbook } from "../js/excel-export.js";
+import { prepareServiceCatalogUpdate } from "../js/service-catalog.js";
 
 test("管理員匯出多工作表 XLSX", () => {
   const bytes = buildAdminWorkbook({
@@ -63,6 +64,21 @@ test("會員Excel顯示生日月日、入會年份和匯出當日年資，不估
   for (const label of ["生日（月日）", "11月10日", "2月29日", "入會年份", "會員年資（截至匯出日）", "2023", "3年0個月", "未記錄"]) assert.ok(members.includes(label));
   assert.doesNotMatch(members, /1990/);
   assert.equal(JSON.stringify(data), before);
+});
+
+test("價目替換前後的消費、明細及全部營業額Excel內容逐字不變", () => {
+  const data = {
+    profiles:[{id:"m1",role:"member",name:"歷史會員"}],
+    catalog:[{id:"old-cut",name:"洗剪吹",kind:"service",price:280,duration_minutes:60,active:true}],
+    sales:[{id:"s1",member_id:"m1",completed_at:"2020-01-01T05:00:00Z",subtotal:280,discount:28,final_amount:252}],
+    saleItems:[{id:"line1",sale_id:"s1",kind:"service",name:"洗剪吹",quantity:1,unit_price:280}]
+  };
+  const exportedAt=new Date("2026-11-19T00:00:00Z");
+  const before=unzipStoredFiles(buildAdminWorkbook(data,exportedAt));
+  const update=prepareServiceCatalogUpdate(data,"admin",exportedAt.toISOString());
+  const after=unzipStoredFiles(buildAdminWorkbook(update.data,exportedAt));
+  for(const number of [4,5,13,14]) assert.equal(after.get(`xl/worksheets/sheet${number}.xml`),before.get(`xl/worksheets/sheet${number}.xml`));
+  assert.match(after.get("xl/worksheets/sheet8.xml"),/停用/);
 });
 
 function unzipStoredFiles(bytes) {

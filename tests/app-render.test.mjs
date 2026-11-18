@@ -5,6 +5,7 @@ import { createContext, runInContext } from "node:vm";
 import * as rules from "../js/rules.js";
 import { summarizeRevenue } from "../js/revenue.js";
 import { buildMemberDetail } from "../js/member-detail.js";
+import { buildServiceCatalog } from "../js/service-catalog.js";
 
 // Exercise the real HTML render functions without opening any browser or
 // touching a user's session/storage. DOM event bindings are inert test doubles.
@@ -103,4 +104,25 @@ test("新增會員提交會把月日轉成無年份生日，未選完整日期�
   runInContext('memberFields = [["name","測試會員"],["phone","21234568"],["birthdayMonth","2"]];', context);
   await assert.rejects(() => runInContext("onMember(submitEvent)", context), /同時選擇生日/);
   assert.equal(runInContext("submittedCount", context), 1);
+});
+
+test("項目選單只有30個新服務；舊預約結帳必須重新選擇，歷史資料不改", () => {
+  const context = renderContext();
+  context.newServices = buildServiceCatalog();
+  runInContext(`state.data.catalog=[{id:"old-color",name:"舊染髮",kind:"service",price:780,duration_minutes:120,active:false},...newServices];`,context);
+  const options = runInContext('catalogOptions("")',context);
+  assert.equal((options.match(/<option value="svc-/g)||[]).length,30);
+  assert.doesNotMatch(options,/舊染髮/);
+  for (const price of [498,708,808]) assert.ok(options.includes(`電髮（冷燙） · ${rules.formatMoney(price)}`));
+  assert.doesNotMatch(runInContext('catalogOptions("old-color")',context),/舊染髮|value="old-color"/);
+  runInContext(`state.data.appointments=[{id:"old-apt",member_id:"member-1",service_id:"old-color",stylist_id:"sty-a",status:"confirmed",start_at:"2026-12-01T05:00:00Z"}];state.modal={type:"sale",memberId:"member-1",appointmentId:"old-apt",redemption:0};state.saleItems=[];`,context);
+  const html=runInContext("saleModal()",context);
+  assert.match(html,/此預約原有項目已停用，請選擇現行項目/);
+  assert.doesNotMatch(html,/<option value="old-color"/);
+  assert.match(html,/<button class="button primary full" type="submit" disabled>/);
+  assert.equal(runInContext("state.saleItems[0].catalogId",context),"");
+  assert.equal(runInContext("state.data.appointments[0].service_id",context),"old-color");
+  assert.equal(runInContext("state.data.catalog[0].price",context),780);
+  assert.doesNotMatch(runInContext("appointmentModal()",context),/value="old-color"|舊染髮/);
+  assert.doesNotMatch(runInContext("renderBooking()",context),/value="old-color"|舊染髮/);
 });
