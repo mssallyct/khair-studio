@@ -23,6 +23,25 @@ function renderContext() {
   return context;
 }
 
+test('從會員列按印花直接固定該會員，其他管理員只讀而不重新搜尋',()=>{
+  for(const username of ['howood','sally','admin135']){
+    const context=renderContext();context.username=username;
+    runInContext('state.profile.username=username;state.data.profiles.push({id:"member-2",name:"指定第二位會員",role:"member"});state.data.stamps.push({id:"stamp-2",member_id:"member-2",delta:5,reason:"第二位會員紀錄",created_at:"2026-11-19T04:00:00Z"});state.modal={type:"stamps",memberId:"member-2"};',context);
+    const html=runInContext('stampModal()',context);
+    assert.match(html,/指定第二位會員・印花資料/);assert.match(html,/name="memberId" value="member-2"/);
+    assert.doesNotMatch(html,/<select|data-member-lookup-input/);assert.match(html,/現有印花：5 個/);
+    assert.equal(html.includes('id="stamp-form"'),username!=='admin135');
+  }
+});
+
+test('產品在設定及消費選單按價錢排序，停用舊產品不顯示',()=>{
+  const context=renderContext();
+  runInContext('state.data.catalog.push({id:"p200",kind:"product",name:"產品200",price:200},{id:"p80",kind:"product",name:"產品80",price:80},{id:"old",kind:"product",name:"停用舊產品",price:1,active:false});',context);
+  for(const expr of ['renderSettings()','catalogOptions("")']){
+    const html=runInContext(expr,context);assert.ok(html.indexOf('產品80')<html.indexOf('產品200'));assert.doesNotMatch(html,/停用舊產品/);
+  }
+});
+
 test('會員電話欄只給Howood；新增消費改電話搜尋而不預選第一位會員',()=>{
   for(const username of ['howood','sally','admin135','admin268','admin567','admin889','admin233']){
     const context=renderContext();context.username=username;

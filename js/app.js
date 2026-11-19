@@ -523,12 +523,18 @@ function saleItemRow(item,index) {
 }
 
 function stampModal() {
-  const members = state.data.profiles.filter(item => item.role === "member");
-  return `<div class="modal-backdrop"><section class="modal"><div class="modal-head"><h2>管理員調整印花</h2><button class="icon-button" data-action="close-modal">×</button></div>
-    <form id="stamp-form"><label class="field"><span>會員</span><select name="memberId">${members.map(item => `<option value="${item.id}">${esc(item.name)} · 現有${memberBalance(item.id)}個</option>`).join("")}</select></label>
-    <label class="field"><span>加／減印花</span><input name="delta" type="number" step="1" required placeholder="例如 1 或 -1"></label>
-    <label class="field"><span>原因（必填）</span><textarea name="reason" required placeholder="例如：生日獎賞、更正錯誤、推廣獎賞"></textarea></label>
-    <button class="button primary full" type="submit">儲存調整紀錄</button></form>
+  const members=state.data.profiles.filter(m=>m.role==="member");
+  const member=members.find(m=>m.id===state.modal.memberId),allowed=can(state.profile,"stamps.adjust");
+  if(state.modal.memberId && !member)return `<div class="modal-backdrop"><section class="modal"><p>找不到指定會員，沒有更改印花。</p><button data-action="close-modal">關閉</button></section></div>`;
+  const heading=member ? `${esc(member.name)}・印花資料` : "管理員調整印花";
+  const identity=member ? `<div class="card"><strong>${esc(member.name)}</strong><p>現有印花：${memberBalance(member.id)} 個</p></div><input type="hidden" name="memberId" value="${esc(member.id)}">` : `<label class="field"><span>會員</span><select name="memberId">${members.map(m=>`<option value="${esc(m.id)}">${esc(m.name)} · 現有${memberBalance(m.id)}個</option>`).join("")}</select></label>`;
+  return `<div class="modal-backdrop"><section class="modal"><div class="modal-head"><h2>${heading}</h2><button class="icon-button" data-action="close-modal">×</button></div>
+    ${member && state.data.rewardWallets?.[member.id] ? memberRewardView(member,state.data.rewardWallets[member.id]) : ""}
+    ${allowed ? `<form id="stamp-form">${identity}
+      <label class="field"><span>加／減印花</span><input name="delta" type="number" step="1" required placeholder="例如 1 或 -1"></label>
+      <label class="field"><span>原因（必填）</span><textarea name="reason" required placeholder="例如：更正錯誤"></textarea></label>
+      <button class="button primary full" type="submit">儲存此會員調整紀錄</button></form>` : `${identity}<p class="muted">只供查閱；印花調整由 Howood 或 Sally 操作。</p>`}
+    ${member ? `<h3>此會員印花紀錄</h3>${stampLedgerList(state.data.stamps.filter(row=>row.member_id===member.id))}` : ""}
   </section></div>`;
 }
 
@@ -625,7 +631,7 @@ root.addEventListener("click", async event => {
     if(action==="import-local-data"){if(api.testingMode || !api.backendMode || !can(state.profile,"migration"))throw new Error("測試版不可匯入真實資料，或你沒有此操作權限。");state.modal={type:"legacy-import"};render();return;}
     if(action==="backup-local-data"){await backupLocalData();return;}
     if(action==="review-rewards"){if(!api.backendMode || !can(state.profile,"members.joined-date"))throw new Error("你沒有此操作權限。");state.modal={type:"reward-opening",memberId:target.dataset.member};render();return;}
-    const permission = action.includes("catalog") ? "catalog.write" : action.includes("stylist") || action.includes("assistant") ? "team.write" : ["adjust-stamps","stamps-member"].includes(action) ? "stamps.adjust" : action === "export-data" ? "export" : null;
+    const permission = action.includes("catalog") ? "catalog.write" : action.includes("stylist") || action.includes("assistant") ? "team.write" : action === "adjust-stamps" ? "stamps.adjust" : action === "export-data" ? "export" : null;
     if (permission && !can(state.profile,permission)) throw new Error("你沒有此操作權限。");
     if (action === "view-member") { state.selectedMemberId=target.dataset.member; state.view="member-detail"; closeMenu(); render(); return; }
     if (action === "select-member-lookup") { selectMemberLookup(target); return; }
@@ -831,7 +837,7 @@ function catalogOptions(selectedId){
   return `${needsSelection?`<option value="" selected disabled>請選擇現行項目</option>`:""}${services.length?`<optgroup label="服務">${options(services)}</optgroup>`:""}${products.length?`<optgroup label="產品">${options(products)}</optgroup>`:""}`;
 }
 
-function activeCatalogItems() { return (state.data.catalog || []).filter(item => item.active !== false); }
+function activeCatalogItems() { const active=(state.data.catalog || []).filter(item=>item.active!==false);return [...active.filter(i=>i.kind!=="product"),...active.filter(i=>i.kind==="product").sort((a,b)=>Number(a.price)-Number(b.price))]; }
 function activeStylistItems() { return (state.data.stylists || []).filter(item => item.active !== false); }
 function activeAssistantItems() { return (state.data.assistants || []).filter(item => item.active !== false); }
 

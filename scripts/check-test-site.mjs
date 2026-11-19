@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {execFileSync} from 'node:child_process';
-import {createTestingApi,TEST_KEY} from '../dist/test/js/testing-api.js';
+import {createTestingApi,TEST_KEY,sampleData} from '../dist/test/js/testing-api.js';
+import {PRODUCT_REVISION} from '../dist/test/js/product-catalog.js';
 import {quoteRewards} from '../dist/test/js/loyalty-v2.js';
 const values=new Map(),accessed=[];
 const storage={getItem(k){accessed.push(k);return values.get(k)??null;},setItem(k,v){accessed.push(k);values.set(k,v);}};
@@ -27,6 +28,18 @@ const d=await api.getAdminDashboard();assert.equal(d.sales.length,3);assert.equa
 await assert.rejects(api.importLegacy({}));
 const restored=await createTestingApi({storage,clock});await restored.signIn('sally');assert.equal((await restored.getAdminDashboard()).sales.length,3);
 assert.deepEqual([...new Set(accessed)],[TEST_KEY]);
+// Existing sandbox records upgrade once, atomically; failed writes retain them.
+const old=sampleData(clock());delete old.catalogUpdates[PRODUCT_REVISION];
+old.catalog=old.catalog.filter(p=>p.kind!=='product');old.catalog.push({id:'old-product',name:'舊產品',kind:'product',price:200,active:true});
+old.sales=[{id:'old-sale',member_id:'test-member-0',final_amount:190}];old.saleItems=[{id:'old-line',sale_id:'old-sale',catalog_id:'old-product',name:'舊產品',unit_price:200}];
+let saved=JSON.stringify(old),fail=true;
+const oldStorage={getItem:k=>saved,setItem(k,v){assert.equal(k,TEST_KEY);if(fail)throw new Error('quota');saved=v;}};
+const upgraded=await createTestingApi({storage:oldStorage,clock});
+await assert.rejects(upgraded.signIn('sally'),/quota/);assert.equal(saved,JSON.stringify(old));
+fail=false;await upgraded.signIn('sally');const after=JSON.parse(saved);
+assert.deepEqual(after.sales,old.sales);assert.deepEqual(after.saleItems,old.saleItems);assert.deepEqual(after.rewardWallets,old.rewardWallets);
+assert.equal(after.catalog.filter(p=>p.kind==='product'&&p.active!==false).length,21);assert.equal(after.catalog.find(p=>p.id==='old-product').active,false);
+const once=saved;await upgraded.signOut();await upgraded.signIn('sally');assert.equal(saved,once);
 const ref=process.env.KHAIR_STABLE_REF||'2469ba7';
 for(const file of ['js/app.js','js/api.js','js/demo-store.js','config.example.js'])assert.equal(await readFile(`dist/${file}`,'utf8'),execFileSync('git',['show',`${ref}:${file}`],{encoding:'utf8'}));
 assert.match(await readFile('dist/test/index.html','utf8'),/功能測試版/);
