@@ -4,6 +4,9 @@ import { downloadAdminWorkbook } from "./excel-export.js";
 import { findMembersByPhone, normalizePhoneSearch } from "./member-search.js";
 import { buildMemberDetail } from "./member-detail.js";
 import { summarizeRevenue } from "./revenue.js";
+import { can, visibleViews, displayDataFor } from "./access-policy.js";
+import { expiryNoticeView, memberRewardView } from "./reward-views.js";
+import { quoteRewards, rewardStatus } from "./loyalty-v2.js";
 
 let api;
 const root = document.querySelector("#app");
@@ -24,8 +27,11 @@ boot();
 
 async function boot() {
   try {
-    api = new KhairApi(window.KHAIR_CONFIG || {});
-    if ("serviceWorker" in navigator) navigator.serviceWorker.register("./sw.js").catch(() => null);
+    if(window.KHAIR_CONFIG?.testingMode){
+      if(!location.pathname.endsWith('/test/') && !location.pathname.endsWith('/test/index.html'))throw new Error('測試版只可在獨立測試網址使用。');
+      api=await (await import('./testing-api.js')).createTestingApi();
+    }else api = new KhairApi(window.KHAIR_CONFIG || {});
+    if (!api.testingMode && "serviceWorker" in navigator) navigator.serviceWorker.register("./sw.js").catch(() => null);
     state.session = await api.getSession();
     if (state.session) {
       state.profile = await api.getProfile();
@@ -45,13 +51,13 @@ async function refresh() {
   if (!state.profile) { state.data = null; render(); return; }
   state.loading = true; render();
   try {
-    state.data = state.profile.role === "admin" ? await api.getAdminDashboard() : await api.getMemberDashboard(state.profile.id);
+    state.data = state.profile.role === "admin" ? displayDataFor(state.profile, await api.getAdminDashboard()) : await api.getMemberDashboard(state.profile.id);
   } catch (error) { toast(error.message, true); }
   state.loading = false; render();
 }
 
 function render() {
-  root.innerHTML = state.profile ? renderApp() : renderAuth();
+  root.innerHTML = (api.testingMode ? `<aside class="test-banner"><strong>功能測試版・非正式營運</strong><br>只用虛構資料；資料僅存本裝置，不會同步。角色切換不驗證正式密碼，電話隱藏只供流程測試，並非安全保護。<br><a href="../">返回原有系統</a> · 切換角色請先登出。</aside>` : '') + (state.profile ? renderApp() : renderAuth());
   bindForms();
 }
 
@@ -65,7 +71,7 @@ function renderAuth() {
           <h1>Your hair,<br>your moment.</h1>
           <p>預約、消費及電子印花，一個 App 輕鬆管理。星期一至日 11:00–21:00。</p>
         </div>
-        <div class="brand-notes"><span>含服務單每滿 HK$600 · 1印花</span><span>4印花 · 全單9折</span><span>8印花 · 全單85折</span></div>
+        <div class="brand-notes">${api.backendMode ? `<span>三款剪吹累積10次 · 9折</span><span>其他服務每滿HK$600 · 1印花</span><span>4印9折 · 8印85折</span>` : `<span>含服務單每滿 HK$600 · 1印花</span><span>4印花 · 全單9折</span><span>8印花 · 全單85折</span>`}</div>
       </section>
       <section class="auth-panel">
         <div class="auth-card">
@@ -80,6 +86,7 @@ function renderAuth() {
 }
 
 function loginForm() {
+  if(api.testingMode)return `<form id="login-form"><label class="field"><span>選擇測試角色（毋須密碼）</span><select name="username">${['howood','sally','Admin135','Admin268','Admin567','Admin889','Admin233'].map(name=>`<option value="${name}">${name}</option>`).join('')}</select></label><p class="muted">內置剪吹9次、3個印花及7個印花會員。請勿輸入真實個人資料。</p><button class="button primary full" type="submit">進入功能測試</button></form>`;
   return `<form id="login-form">
     <label class="field"><span>登入名稱</span><input name="username" type="text" autocomplete="username" required autocapitalize="none" spellcheck="false"></label>
     <label class="field"><span>密碼</span><input name="password" type="password" autocomplete="current-password" required minlength="8"></label>
@@ -89,11 +96,11 @@ function loginForm() {
 
 function renderApp() {
   const admin = state.profile.role === "admin";
-  const nav = admin ? [
+  const nav = (admin ? [
     ["dashboard", "◫", "營運總覽"], ["appointments", "◷", "預約管理"], ["members", "◎", "會員管理"], ["sales", "$", "消費及印花"], ["settings", "⚙", "服務設定"], ["audit", "≡", "操作記錄"]
   ] : [
     ["dashboard", "⌂", "會員首頁"], ["book", "+", "立即預約"], ["appointments", "◷", "我的預約"], ["rewards", "✦", "電子印花"], ["profile", "◎", "會員資料"]
-  ];
+  ]).filter(([id]) => !admin || visibleViews(state.profile).includes(id));
   return `<div class="app-shell">
     <aside class="sidebar" id="sidebar">
       <div class="brand-lockup"><img class="brand-mark" src="assets/logo.png" alt="K.Hair Studio Logo"><span class="brand-name">K.Hair</span></div>
@@ -103,7 +110,7 @@ function renderApp() {
     <main class="main">
       <header class="topbar">
         <div><p class="eyebrow">${admin ? "K.Hair Admin" : "K.Hair Member"}</p><h1>${viewTitle()}</h1><p class="muted">${todayText()}</p></div>
-        <div class="topbar-actions"><button class="icon-button mobile-menu" data-action="toggle-menu">☰</button><button class="button ghost" data-action="export-data"><span>匯出 Excel</span>↓</button><button class="button ghost" data-action="refresh"><span>同步資料</span>↻</button></div>
+        <div class="topbar-actions"><button class="icon-button mobile-menu" data-action="toggle-menu">☰</button>${can(state.profile,"export") ? `<button class="button ghost" data-action="export-data"><span>匯出 Excel</span>↓</button>` : ""}<button class="button ghost" data-action="refresh"><span>同步資料</span>↻</button></div>
       </header>
       ${state.loading ? `<div class="card"><p class="muted">正在載入資料…</p></div>` : admin ? renderAdminView() : renderMemberView()}
     </main>
@@ -187,6 +194,7 @@ function renderProfile() {
 }
 
 function renderAdminView() {
+  if (!can(state.profile, state.view === "member-detail" ? "members" : state.view)) return `<section class="card"><p>你沒有此頁面權限。</p></section>`;
   if (state.view === "appointments") return renderAdminAppointments();
   if (state.view === "member-detail") return renderMemberDetail();
   if (state.view === "members") return renderMembers();
@@ -200,9 +208,12 @@ function renderAdminDashboard() {
   const today = localDate(new Date());
   const todayAppointments = state.data.appointments.filter(item => localDate(new Date(item.start_at)) === today);
   const pending = state.data.appointments.filter(item => item.status === "pending");
+  if (!can(state.profile,"revenue")) return `<div class="grid cols-2"><section class="card"><div class="card-head"><h2>待確認預約</h2></div>${adminAppointmentList(pending)}</section><section class="card"><div class="card-head"><h2>今日行程</h2><span>11:00–21:00</span></div>${adminAppointmentList(todayAppointments.sort((a,b)=>new Date(a.start_at)-new Date(b.start_at)))}</section></div>`;
   const revenue = summarizeRevenue(state.data.sales);
   const members = state.data.profiles.filter(item => item.role === "member");
   return `<div class="grid">
+    ${api.backendMode && !api.testingMode && can(state.profile,"migration") && !members.length ? `<section class="card"><h2>先匯入原有資料</h2><p>請在原本有會員及消費資料的裝置操作；匯入前先下載完整備份。此程序不會刪除本機原資料。</p><button class="button" data-action="import-local-data">匯入原本裝置資料</button></section>` : ""}
+    ${expiryNoticeView(members, state.data.rewardWallets)}
     <div class="grid cols-3">
       ${statCard("今日營業額", formatMoney(revenue.todayRevenue), "按已完成消費的實收金額")}
       ${statCard("本月營業額", formatMoney(revenue.currentRevenue), `${revenue.currentMonth} · 香港時間`)}
@@ -228,8 +239,8 @@ function renderAdminAppointments() {
 
 function renderMembers() {
   const members = state.data.profiles.filter(item => item.role === "member");
-  return `<section class="card"><div class="card-head"><h2>會員名單</h2><div class="actions"><span class="muted">${members.length} 位會員</span><button class="button small" data-action="new-member">＋ 新增會員</button></div></div>
-    <div class="filter-bar"><input id="member-search" placeholder="搜尋姓名、電話或電郵"></div>
+  return `${expiryNoticeView(members, state.data.rewardWallets)}<section class="card"><div class="card-head"><h2>會員名單</h2><div class="actions"><span class="muted">${members.length} 位會員</span><button class="button small" data-action="new-member">＋ 新增會員</button></div></div>
+    <div class="filter-bar"><input id="member-search" placeholder="${can(state.profile,"phone.read") ? "搜尋姓名、電話或電郵" : "搜尋姓名或電郵"}"></div>
     <div class="table-wrap"><table><thead><tr><th>會員</th><th>電話</th><th>生日（月日）</th><th>入會年份</th><th>會員年資</th><th>印花</th><th>介紹編號</th><th>操作</th></tr></thead><tbody id="member-table-body">${members.map(memberRow).join("")}</tbody></table></div>
   </section>`;
 }
@@ -241,6 +252,8 @@ function renderMemberDetail() {
   const membership = membershipInfo(member);
   const referralNames = referredMembers.length ? referredMembers.map(item => item.name).join("、") : "未有介紹會員";
   return `<div class="grid member-detail-page">
+    ${memberRewardView(member, state.data.rewardWallets?.[member.id])}
+    ${api.backendMode && !state.data.rewardWallets?.[member.id] && can(state.profile,"members.joined-date") ? `<section class="card"><button class="button" data-action="review-rewards" data-member="${esc(member.id)}">核對入會日期及新制起始紀錄</button></section>` : ""}
     <section class="card member-profile-hero">
       <button class="text-button member-back" data-view="members">← 返回會員名單</button>
       <div class="member-profile-heading">
@@ -249,7 +262,7 @@ function renderMemberDetail() {
       </div>
     </section>
     <div class="grid cols-4">
-      ${statCard("現有印花", balance, balance >= 8 ? "可享85折" : balance >= 4 ? "可享9折" : `尚欠${Math.max(0, 4 - balance)}個享9折`)}
+      ${statCard("現有印花", memberBalance(member.id), state.data.rewardWallets?.[member.id] ? "本輪累積進度；可用優惠另列" : balance >= 8 ? "可享85折" : balance >= 4 ? "可享9折" : `尚欠${Math.max(0, 4 - balance)}個享9折`)}
       ${statCard("累積消費", formatMoney(totalSpend), `${sales.length} 宗消費紀錄`)}
       ${statCard("預約紀錄", appointments.length, "包括待確認及已完成")}
       ${statCard("介紹會員", referredMembers.length, `${rewardedReferralCount} 位已消費並獲印花`)}
@@ -278,6 +291,7 @@ function renderSales() {
 }
 
 function renderSettings() {
+  if (!can(state.profile,"settings")) return `<section class="card">你沒有此頁面權限。</section>`;
   const catalog = activeCatalogItems();
   const stylists = activeStylistItems();
   const assistants = activeAssistantItems();
@@ -289,6 +303,7 @@ function renderSettings() {
 }
 
 function renderAuditLog() {
+  if (!can(state.profile,"audit")) return `<section class="card">你沒有此頁面權限。</section>`;
   const items = state.data.auditLog || [];
   if (!items.length) return `<section class="card"><div class="card-head"><div><h2>操作記錄</h2><p class="muted small">資料更新後會自動記錄登入者、時間及內容。</p></div></div>${empty("暫時未有操作記錄")}</section>`;
   return `<section class="card"><div class="card-head"><div><h2>操作記錄</h2><p class="muted small">記錄新增會員、預約、項目、消費、印花及狀態更改。</p></div><span class="muted">${items.length} 項記錄</span></div>
@@ -297,6 +312,8 @@ function renderAuditLog() {
 }
 
 function renderModal() {
+  if (state.modal.type === "legacy-import") return legacyImportModal();
+  if (state.modal.type === "reward-opening") return rewardOpeningModal();
   if (state.modal.type === "member") return memberModal();
   if (state.modal.type === "appointment") return appointmentModal();
   if (state.modal.type === "catalog") return catalogModal();
@@ -308,6 +325,17 @@ function renderModal() {
   if (state.modal.type === "sale") return saleModal();
   if (state.modal.type === "stamps") return stampModal();
   return "";
+}
+
+function legacyImportModal(){
+  return `<div class="modal-backdrop"><section class="modal"><div class="modal-head"><h2>匯入原本裝置資料</h2><button class="icon-button" data-action="close-modal">×</button></div><p>只會匯入此瀏覽器原有的會員、消費、印花、預約等紀錄。若其他裝置另有資料，請先核對，唔好混合覆蓋。</p><button class="button ghost" data-action="backup-local-data">1. 下載完整JSON備份</button><form id="legacy-import-form"><label class="field"><span><input name="confirmed" type="checkbox" required> 我已確認備份已儲存，並選擇此裝置作匯入來源</span></label><button class="button primary" type="submit" ${state.modal.backupDigest ? "" : "disabled"}>2. 傳送至已連接後端</button></form></section></div>`;
+}
+
+function rewardOpeningModal(){
+  const member=state.data.profiles.find(m=>m.id===state.modal.memberId),membership=membershipInfo(member);
+  if(!member)return "";
+  const field=(name,label,max)=>`<label class="field"><span>${label}</span><input type="number" name="${name}" required min="0" max="${max}" step="1" placeholder="請核對後填寫，包括0"></label>`;
+  return `<div class="modal-backdrop"><section class="modal wide"><div class="modal-head"><h2>核對 ${esc(member.name)} 的新制起始紀錄</h2><button class="icon-button" data-action="close-modal">×</button></div><p class="demo-note">原有印花帳簿合計 ${memberBalance(member.id)} 個。以下不會自動推算舊優惠是否已用；請按實際紀錄填寫，歷史消費不會重算。</p><form id="reward-opening-form" class="form-grid"><label class="field"><span>實際入會日期（請核對）</span><input name="joinedDate" type="date" required max="${localDate(new Date())}" value="${esc(membership.joinedDate || "")}"></label>${field("stampProgress","本輪已累積印花（0–7）",7)}${field("hairVisits","三款剪吹已累積次數（0–9）",9)}${field("stamp4Coupons","尚未使用的4印9折優惠張數",50)}${field("stamp8Coupons","尚未使用的8印85折優惠張數",50)}${field("hairCoupons","尚未使用的剪吹10次9折優惠張數",50)}<label class="field span-2"><span>核對依據／原因</span><textarea name="reason" required></textarea></label><label class="field span-2"><span><input name="confirmed" type="checkbox" required> 已核對日期、次數及未用優惠，確認一次性建立起始紀錄</span></label><button class="button primary span-2" type="submit">確認及保存核對紀錄</button></form></section></div>`;
 }
 
 function appointmentModal() {
@@ -395,10 +423,11 @@ function memberModal() {
     <form id="member-form" class="form-grid">
       <label class="field span-2"><span>會員姓名</span><input name="name" required maxlength="80" autocomplete="off"></label>
       <label class="field"><span>香港電話</span><input name="phone" type="tel" inputmode="numeric" required maxlength="13" placeholder="9123 4567" autocomplete="off"></label>
+      <label class="field"><span>入會日期</span><input name="joinedDate" type="date" required max="${localDate(new Date())}" value="${localDate(new Date())}"></label>
       <div class="field"><span id="member-birthday-label">生日（選填，只需月日）</span><div class="birthday-fields" role="group" aria-labelledby="member-birthday-label"><select name="birthdayMonth" id="member-birthday-month" aria-label="生日月份"><option value="">月份</option>${Array.from({length:12},(_,i)=>`<option value="${i+1}">${i+1}月</option>`).join("")}</select><select name="birthdayDay" id="member-birthday-day" aria-label="生日日期" disabled>${birthdayDayOptions("")}</select></div></div>
       <label class="field span-2"><span>電郵（選填）</span><input name="email" type="email" autocomplete="off" placeholder="沒有可留空"></label>
       ${memberPhoneLookup({ name: "referrerId", inputId: "referrer-member-phone", label: "介紹人（選填，以電話搜尋）" })}
-      <p class="muted small span-2">生日無需填出生年份。入會日期會在建立會員時自動記錄，年資隨時間累積。會員不會獲得登入帳戶。</p>
+      <p class="muted small span-2">生日無需填出生年份。請核對實際入會日期；年資及印花年度按此日期計算。會員不會獲得登入帳戶。</p>
       <button class="button primary full span-2" type="submit">建立會員</button>
     </form>
   </section></div>`;
@@ -409,6 +438,7 @@ function birthdayDayOptions(month, selected = "") {
 }
 
 function saleModal() {
+  if(api.backendMode) return backendSaleModal();
   const members = state.data.profiles.filter(item => item.role === "member");
   const selectedMember = state.modal.memberId || members[0]?.id;
   const balance = memberBalance(selectedMember);
@@ -451,11 +481,43 @@ function saleModal() {
   </section></div>`;
 }
 
+function backendSaleQuote(couponId = state.modal.couponId || null) {
+  const members=state.data.profiles.filter(p=>p.role==="member");
+  const member=members.find(p=>p.id===(state.modal.memberId || members[0]?.id));
+  const wallet=state.data.rewardWallets?.[member?.id];
+  return quoteRewards({wallet,items:state.saleItems,saleId:state.modal.requestId,couponId,birthdayBonus:birthdayStampAward(member,state.data.stamps)});
+}
+
+function backendSaleModal() {
+  const members=state.data.profiles.filter(p=>p.role==="member");
+  const selected=state.modal.memberId || members[0]?.id;
+  const appointment=state.data.appointments.find(a=>a.id===state.modal.appointmentId && a.member_id===selected);
+  const catalog=activeCatalogItems(),stylists=activeStylistItems(),assistants=activeAssistantItems();
+  state.modal.requestId ||= crypto.randomUUID();
+  if(!state.saleItems.length){
+    const first=appointment ? catalog.find(c=>c.id===appointment.service_id) : catalog[0];
+    state.saleItems=first ? [catalogToSaleItem(first)] : [{catalogId:"",name:"",kind:"service",quantity:1,unitPrice:0}];
+  }
+  let quote,baseQuote,error="";
+  try{baseQuote=backendSaleQuote(null);quote=backendSaleQuote();}catch(e){error=e.message;}
+  const labels={hair10:"剪吹10次・9折",stamp4:"4印花・9折",stamp8:"8印花・85折"};
+  return `<div class="modal-backdrop"><section class="modal wide"><div class="modal-head"><h2>記錄消費</h2><button class="icon-button" data-action="close-modal">×</button></div><form id="sale-form">
+    <div class="form-grid"><label class="field"><span>會員</span><select name="memberId" id="sale-member" required>${members.map(m=>`<option value="${esc(m.id)}" ${m.id===selected?"selected":""}>${esc(m.name)}</option>`).join("")}</select></label>
+    <label class="field"><span>相關預約（選填）</span><select name="appointmentId" id="sale-appointment"><option value="">沒有</option>${state.data.appointments.filter(a=>a.member_id===selected && ["pending","confirmed"].includes(a.status)).map(a=>`<option value="${esc(a.id)}" ${a.id===state.modal.appointmentId?"selected":""}>${formatDateTime(a.start_at)} · ${serviceName(a.service_id)}</option>`).join("")}</select></label>
+    <label class="field"><span>是次跟進髮型師</span><select name="stylistId" id="sale-stylist" required>${stylists.map(s=>`<option value="${esc(s.id)}" ${s.id===(state.modal.stylistId || appointment?.stylist_id || stylists[0]?.id)?"selected":""}>${esc(s.name)}</option>`).join("")}</select></label>
+    <label class="field"><span>是次跟進髮型助理（選填）</span><select name="assistantId" id="sale-assistant"><option value="">沒有／不適用</option>${assistants.map(a=>`<option value="${esc(a.id)}" ${a.id===state.modal.assistantId?"selected":""}>${esc(a.name)}</option>`).join("")}</select></label></div>
+    <div class="card-head"><h3>消費項目</h3><button type="button" class="button ghost small" data-action="add-sale-item">＋ 新增項目</button></div><div class="list">${state.saleItems.map(saleItemRow).join("")}</div>
+    <label class="field"><span>使用優惠（每單一項、不疊加）</span><select id="sale-coupon" name="couponId">${error && state.modal.couponId ? `<option selected disabled>原優惠不適用，請重新選擇</option>` : ""}<option value="">不使用</option>${(baseQuote?.availableCoupons || []).map(c=>`<option value="${esc(c.id)}" ${c.id===state.modal.couponId?"selected":""}>${labels[c.kind]}</option>`).join("")}</select></label>
+    <p class="muted small">三款剪吹合計10次獲一次9折，不發印花；其他服務及其加購產品按優惠前金額每滿$600得1印花（產品按95折計，剪吹金額不計入）。4印花獲9折後繼續累積，8印花獲85折後重新計算；同一消費新獲優惠可即時使用。</p>
+    ${error?`<p class="demo-note" role="alert">${esc(error)}</p>`:`<div class="sale-summary"><div><span>原價</span><strong>${formatMoney(quote.receipt.subtotal)}</strong></div><div><span>${esc(quote.receipt.discountLabel)}</span><strong>−${formatMoney(quote.receipt.discount)}</strong></div><div class="total"><span>實收</span><strong>${formatMoney(quote.receipt.finalAmount)}</strong></div><div><span>新增印花</span><strong>+${quote.receipt.earnedStamps}${quote.receipt.bonusStamps?`＋生日 ${quote.receipt.bonusStamps}`:""}</strong></div><div><span>本輪印花進度</span><strong>${quote.receipt.stampProgress}／8</strong></div><div><span>剪吹累積次數</span><strong>${quote.receipt.hairVisits}／10</strong></div></div>`}
+    <button class="button primary full" type="submit" ${error || !stylists.length || state.saleItems.some(i=>!catalog.some(c=>c.id===i.catalogId)) ? "disabled" : ""}>確認消費、付款及更新優惠</button></form></section></div>`;
+}
+
 function saleItemRow(item,index) {
   return `<div class="list-item sale-item-card ${item.justAdded ? "sale-item-new" : ""}"><div class="form-grid" style="flex:1">
     <label class="field span-2"><span>項目</span><select data-sale-catalog data-index="${index}" required>${catalogOptions(item.catalogId)}</select></label>
     <label class="field"><span>數量</span><input data-sale-field="quantity" data-index="${index}" type="number" min="1" value="${item.quantity}"></label>
-    <label class="field"><span>單價</span><input data-sale-field="unitPrice" data-index="${index}" type="number" min="0" step="0.01" value="${item.unitPrice}"></label>
+    <label class="field"><span>單價</span><input data-sale-field="unitPrice" data-index="${index}" type="number" min="0" step="0.01" value="${item.unitPrice}" ${api.backendMode ? "readonly" : ""}></label>
   </div>${state.saleItems.length>1?`<button class="icon-button" type="button" data-action="remove-sale-item" data-index="${index}">×</button>`:""}</div>`;
 }
 
@@ -510,6 +572,8 @@ function stampLedgerList(items, admin = false) {
 }
 
 function bindForms() {
+  root.querySelector("#legacy-import-form")?.addEventListener("submit",onLegacyImport);
+  root.querySelector("#reward-opening-form")?.addEventListener("submit",onRewardOpening);
   root.querySelector("#login-form")?.addEventListener("submit", onLogin);
   root.querySelector("#member-form")?.addEventListener("submit", onMember);
   root.querySelector("#member-birthday-month")?.addEventListener("change", event => {
@@ -533,6 +597,7 @@ function bindForms() {
     state.modal.memberId = event.target.value;
     state.modal.appointmentId = null;
     state.modal.stylistId = null;
+    state.modal.couponId = null;
     render();
   });
   root.querySelector("#sale-appointment")?.addEventListener("change", event => {
@@ -544,23 +609,29 @@ function bindForms() {
   root.querySelector("#sale-stylist")?.addEventListener("change", event => { state.modal.stylistId = event.target.value; });
   root.querySelector("#sale-assistant")?.addEventListener("change", event => { state.modal.assistantId = event.target.value || null; });
   root.querySelector("#sale-redemption")?.addEventListener("change", event => { state.modal.redemption = Number(event.target.value); render(); });
+  root.querySelector("#sale-coupon")?.addEventListener("change", event => { state.modal.couponId = event.target.value || null; render(); });
   root.querySelectorAll("[data-sale-field]").forEach(input => input.addEventListener("change", updateSaleItem));
   root.querySelectorAll("[data-sale-catalog]").forEach(input => input.addEventListener("change", updateSaleCatalog));
 }
 
 root.addEventListener("click", async event => {
   const view = event.target.closest("[data-view]")?.dataset.view;
-  if (view) { state.view = view; closeMenu(); render(); return; }
+  if (view) { if(!can(state.profile,view)){toast("你沒有此頁面權限。",true);return;} state.view = view; closeMenu(); render(); return; }
   const target = event.target.closest("[data-action]");
   if (!target) return;
   const { action } = target.dataset;
   try {
+    if(action==="import-local-data"){if(api.testingMode || !api.backendMode || !can(state.profile,"migration"))throw new Error("測試版不可匯入真實資料，或你沒有此操作權限。");state.modal={type:"legacy-import"};render();return;}
+    if(action==="backup-local-data"){await backupLocalData();return;}
+    if(action==="review-rewards"){if(!api.backendMode || !can(state.profile,"members.joined-date"))throw new Error("你沒有此操作權限。");state.modal={type:"reward-opening",memberId:target.dataset.member};render();return;}
+    const permission = action.includes("catalog") ? "catalog.write" : action.includes("stylist") || action.includes("assistant") ? "team.write" : ["adjust-stamps","stamps-member"].includes(action) ? "stamps.adjust" : action === "export-data" ? "export" : null;
+    if (permission && !can(state.profile,permission)) throw new Error("你沒有此操作權限。");
     if (action === "view-member") { state.selectedMemberId=target.dataset.member; state.view="member-detail"; closeMenu(); render(); return; }
     if (action === "select-member-lookup") { selectMemberLookup(target); return; }
     if (action === "clear-member-lookup") { clearMemberLookup(target); return; }
     if (action === "logout") { await api.signOut(); Object.assign(state,{session:null,profile:null,data:null,view:"dashboard",selectedMemberId:null}); render(); }
     if (action === "refresh") await refresh();
-    if (action === "export-data") { const fileName=downloadAdminWorkbook(state.data); toast(`${fileName} 已匯出。`); }
+    if (action === "export-data") { const fileName=downloadAdminWorkbook(displayDataFor(state.profile,state.data)); toast(`${fileName} 已匯出。`); }
     if (action === "toggle-menu") document.querySelector("#sidebar")?.classList.toggle("open");
     if (action === "close-modal") { state.modal=null; state.saleItems=[]; render(); }
     if (action === "cancel-appointment") { await api.cancelAppointment(target.dataset.id,state.profile.id); toast("預約已取消。"); await refresh(); }
@@ -591,6 +662,37 @@ root.addEventListener("click", async event => {
     if (action === "remove-sale-item") { state.saleItems.splice(Number(target.dataset.index),1); render(); }
   } catch (error) { toast(error.message,true); }
 });
+
+function legacySource(){
+  if(!can(state.profile,"migration"))throw new Error("你沒有此操作權限。");
+  const raw=localStorage.getItem("khair-demo-v1");if(!raw)throw new Error("此裝置沒有原有資料；請勿當作已匯入或已復原。");
+  let data;try{data=JSON.parse(raw);}catch{throw new Error("原有資料無法讀取，請勿清除網站資料。");}
+  return data;
+}
+async function sourceDigest(data){const bytes=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(JSON.stringify(data)));return Array.from(new Uint8Array(bytes),b=>b.toString(16).padStart(2,"0")).join("");}
+async function backupLocalData(){
+  const data=legacySource(),url=URL.createObjectURL(new Blob([JSON.stringify(data)],{type:"application/json"}));
+  const a=document.createElement("a");a.href=url;a.download=`KHair_完整資料備份_${localDate(new Date())}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(url),30000);
+  state.modal.backupDigest=await sourceDigest(data);render();
+}
+async function onLegacyImport(event){
+  event.preventDefault();
+  await busy(event.submitter,async()=>{
+    if(!api.backendMode || !can(state.profile,"migration") || !new FormData(event.currentTarget).get("confirmed"))throw new Error("請先備份並確認來源。");
+    const data=legacySource(),digest=await sourceDigest(data);if(digest!==state.modal.backupDigest)throw new Error("資料已有變動，請重新下載備份後再匯入。");
+    const result=await api.importLegacy(data);if(result.checksum!==digest)throw new Error("匯入校驗未通過，請勿清除本機原資料。");
+    state.modal=null;toast("資料已匯入並通過校驗；本機原資料仍然保留。");await refresh();
+  });
+}
+async function onRewardOpening(event){
+  event.preventDefault();const input=Object.fromEntries(new FormData(event.currentTarget));
+  await busy(event.submitter,async()=>{
+    if(!can(state.profile,"members.joined-date"))throw new Error("你沒有此操作權限。");
+    for(const key of ["stampProgress","hairVisits","stamp4Coupons","stamp8Coupons","hairCoupons"]){if(input[key]==="" || input[key]==null)throw new Error("請填寫所有起始數字，包括0。");input[key]=Number(input[key]);}
+    input.confirmed=!!input.confirmed;input.memberId=state.modal.memberId;
+    await api.reviewRewardOpening(input);state.modal=null;toast("起始紀錄已保存，歷史消費未有重算。");await refresh();
+  });
+}
 
 async function onLogin(event) {
   event.preventDefault(); const form = new FormData(event.currentTarget);
@@ -679,7 +781,7 @@ async function onSale(event) {
     toast("請為所有消費項目選擇現行服務或產品。", true);
     return;
   }
-  await busy(event.submitter, async()=>{ await api.completeSale({memberId:form.memberId,appointmentId:form.appointmentId||state.modal.appointmentId,stylistId:form.stylistId,assistantId:form.assistantId||null,items:state.saleItems,requestedRedemption:Number(form.requestedRedemption),adminId:state.profile.id}); state.modal=null; state.saleItems=[]; toast("消費、跟進人員及印花已記錄。"); await refresh(); });
+  await busy(event.submitter, async()=>{ const quote=api.backendMode ? backendSaleQuote() : null; await api.completeSale({memberId:form.memberId,appointmentId:form.appointmentId||state.modal.appointmentId,stylistId:form.stylistId,assistantId:form.assistantId||null,items:state.saleItems,requestedRedemption:Number(form.requestedRedemption),couponId:state.modal.couponId,requestId:state.modal.requestId,expectedFinalAmount:quote?.receipt.finalAmount,adminId:state.profile.id}); state.modal=null; state.saleItems=[]; toast("消費、跟進人員及優惠已記錄。"); await refresh(); });
 }
 
 async function onStampAdjustment(event) {
@@ -738,9 +840,11 @@ function filterMembers(event) {
 }
 
 function memberPhoneLookup({ name, inputId, label, required = false }) {
+  const phone = can(state.profile,"phone.search");
+  if (!phone) label = label.replace(/電話/g,"姓名／會員編號");
   return `<div class="field span-2 member-lookup" data-member-lookup>
     <label class="field-label" for="${inputId}">${esc(label)}</label>
-    <div class="member-lookup-input"><span class="member-lookup-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"></circle><path d="m16.5 16.5 4 4"></path></svg></span><input id="${inputId}" data-member-lookup-input type="tel" inputmode="tel" autocomplete="off" placeholder="輸入最少3個電話數字" ${required ? "required" : ""}></div>
+    <div class="member-lookup-input"><span class="member-lookup-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"></circle><path d="m16.5 16.5 4 4"></path></svg></span><input id="${inputId}" data-member-lookup-input type="${phone ? "tel" : "text"}" autocomplete="off" placeholder="${phone ? "輸入最少3個電話數字" : "輸入會員姓名或會員編號"}" ${required ? "required" : ""}></div>
     <input type="hidden" name="${name}" data-member-lookup-value value="">
     <div class="member-lookup-results" data-member-lookup-results aria-live="polite"></div>
     <div class="member-lookup-selected" data-member-lookup-selected hidden></div>
@@ -754,27 +858,28 @@ function updateMemberLookupResults(event) {
   const value = lookup.querySelector("[data-member-lookup-value]");
   const query = event.target.value.trim();
   const digits = normalizePhoneSearch(query);
+  const phone = can(state.profile,"phone.search");
 
   value.value = "";
   selected.hidden = true;
   selected.innerHTML = "";
   if (!query) { results.innerHTML = ""; return; }
-  if (digits.length < 3) {
+  if (phone && digits.length < 3) {
     results.innerHTML = `<p class="member-lookup-hint">請再輸入電話號碼，最少3個數字。</p>`;
     return;
   }
 
-  const matches = findMembersByPhone(state.data.profiles, query);
+  const matches = phone ? findMembersByPhone(state.data.profiles, query) : state.data.profiles.filter(m=>m.role==="member" && `${m.name} ${m.referral_code || ""}`.toLowerCase().includes(query.toLowerCase())).slice(0,20);
   results.innerHTML = matches.length
     ? matches.map(member => `<button class="member-lookup-result" type="button" data-action="select-member-lookup" data-member-id="${esc(member.id)}"><span>${esc(member.name)}</span><strong>${esc(member.phone || "未有電話")}</strong></button>`).join("")
-    : `<p class="member-lookup-hint no-result">找不到此電話的會員。</p>`;
+    : `<p class="member-lookup-hint no-result">找不到符合條件的會員。</p>`;
 }
 
 function selectMemberLookup(target) {
   const lookup = target.closest("[data-member-lookup]");
   const member = state.data.profiles.find(item => item.id === target.dataset.memberId && item.role === "member");
   if (!member) return;
-  lookup.querySelector("[data-member-lookup-input]").value = member.phone || "";
+  lookup.querySelector("[data-member-lookup-input]").value = can(state.profile,"phone.search") ? member.phone || "" : member.name;
   lookup.querySelector("[data-member-lookup-value]").value = member.id;
   lookup.querySelector("[data-member-lookup-results]").innerHTML = "";
   const selected = lookup.querySelector("[data-member-lookup-selected]");
@@ -800,7 +905,7 @@ async function busy(button, fn) {
   finally { if(button&&button.isConnected){button.disabled=false;button.innerHTML=label;} }
 }
 
-function memberBalance(memberId) { return state.data.stamps.filter(item=>item.member_id===memberId).reduce((sum,item)=>sum+Number(item.delta),0); }
+function memberBalance(memberId) { const wallet=state.data.rewardWallets?.[memberId];return wallet ? rewardStatus(wallet).stampProgress : state.data.stamps.filter(item=>item.member_id===memberId).reduce((sum,item)=>sum+Number(item.delta),0); }
 function memberName(id) { return state.data.profiles?.find(item=>item.id===id)?.name || "會員"; }
 function serviceName(id) { return state.data.catalog?.find(item=>item.id===id)?.name || "服務"; }
 function stylistName(id) { return state.data.stylists?.find(item=>item.id===id)?.name || "髮型師"; }

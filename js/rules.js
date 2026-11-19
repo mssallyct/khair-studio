@@ -129,7 +129,7 @@ export function formatBirthday(value) {
 export function membershipInfo(profile, asOf = new Date()) {
   // Calculate from the original registration timestamp, never from a version
   // upgrade or the current date. Missing historical dates remain unknown.
-  const joinedDate = hongKongDateKey(profile?.created_at);
+  const joinedDate = profile?.joined_date ? hongKongDateKey(profile.joined_date) : hongKongDateKey(profile?.created_at);
   const today = hongKongDateKey(asOf);
   const result = { joinedDate, joinedYear: joinedDate ? Number(joinedDate.slice(0, 4)) : null, years: null, months: null, label: "未記錄" };
   if (!joinedDate || !today) return result;

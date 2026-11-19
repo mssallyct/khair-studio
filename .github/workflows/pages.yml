@@ -22,10 +22,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - run: npm ci --ignore-scripts --no-audit --no-fund
       - run: npm run check
+      - run: node scripts/build-test-site.mjs
+        env:
+          KHAIR_STABLE_REF: 30538597bf2d1d1332eda9abbe3645819f9aeff7
+      - run: node scripts/check-test-site.mjs
       - uses: actions/configure-pages@v5
         with:
           enablement: true
