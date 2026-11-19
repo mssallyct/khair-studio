@@ -213,7 +213,7 @@ function renderAdminDashboard() {
   const members = state.data.profiles.filter(item => item.role === "member");
   return `<div class="grid">
     ${api.backendMode && !api.testingMode && can(state.profile,"migration") && !members.length ? `<section class="card"><h2>先匯入原有資料</h2><p>請在原本有會員及消費資料的裝置操作；匯入前先下載完整備份。此程序不會刪除本機原資料。</p><button class="button" data-action="import-local-data">匯入原本裝置資料</button></section>` : ""}
-    ${expiryNoticeView(members, state.data.rewardWallets)}
+    ${expiryNoticeView(members, state.data.rewardWallets, new Date(), {showEmpty:true})}
     <div class="grid cols-3">
       ${statCard("今日營業額", formatMoney(revenue.todayRevenue), "按已完成消費的實收金額")}
       ${statCard("本月營業額", formatMoney(revenue.currentRevenue), `${revenue.currentMonth} · 香港時間`)}
@@ -252,8 +252,6 @@ function renderMemberDetail() {
   const membership = membershipInfo(member);
   const referralNames = referredMembers.length ? referredMembers.map(item => item.name).join("、") : "未有介紹會員";
   return `<div class="grid member-detail-page">
-    ${memberRewardView(member, state.data.rewardWallets?.[member.id])}
-    ${api.backendMode && !state.data.rewardWallets?.[member.id] && can(state.profile,"members.joined-date") ? `<section class="card"><button class="button" data-action="review-rewards" data-member="${esc(member.id)}">核對入會日期及新制起始紀錄</button></section>` : ""}
     <section class="card member-profile-hero">
       <button class="text-button member-back" data-view="members">← 返回會員名單</button>
       <div class="member-profile-heading">
@@ -261,6 +259,8 @@ function renderMemberDetail() {
         <div class="actions member-profile-actions"><button class="button gold" data-action="sale-member" data-member="${esc(member.id)}">＋ 新增消費</button><button class="button ghost" data-action="stamps-member" data-member="${esc(member.id)}">調整印花</button></div>
       </div>
     </section>
+    ${memberRewardView(member, state.data.rewardWallets?.[member.id])}
+    ${api.backendMode && !state.data.rewardWallets?.[member.id] && can(state.profile,"members.joined-date") ? `<section class="card"><button class="button" data-action="review-rewards" data-member="${esc(member.id)}">核對入會日期及新制起始紀錄</button></section>` : ""}
     <div class="grid cols-4">
       ${statCard("現有印花", memberBalance(member.id), state.data.rewardWallets?.[member.id] ? "本輪累積進度；可用優惠另列" : balance >= 8 ? "可享85折" : balance >= 4 ? "可享9折" : `尚欠${Math.max(0, 4 - balance)}個享9折`)}
       ${statCard("累積消費", formatMoney(totalSpend), `${sales.length} 宗消費紀錄`)}
@@ -489,6 +489,13 @@ function backendSaleQuote(couponId = state.modal.couponId || null) {
   return quoteRewards({wallet,items:state.saleItems,saleId:state.modal.requestId,couponId,birthdayBonus:birthdayStampAward(member,state.data.stamps)});
 }
 
+function saleDiscountRows(receipt, itemized = true) {
+  if (!(Number(receipt.discount) > 0)) return "";
+  const product = itemized && Number(receipt.productDiscount) > 0 ? `<div><span>只限產品95折減免</span><strong>−${formatMoney(receipt.productDiscount)}</strong></div>` : "";
+  const hair = itemized && Number(receipt.hairDiscount) > 0 ? `<div><span>第10次剪吹項目減免</span><strong>−${formatMoney(receipt.hairDiscount)}</strong></div>` : "";
+  return `${product}${hair}<div><span>優惠合計：${esc(receipt.discountLabel)}</span><strong>−${formatMoney(receipt.discount)}</strong></div>`;
+}
+
 function backendSaleModal() {
   const members=state.data.profiles.filter(p=>p.role==="member");
   const selected=state.modal.memberId || "";
@@ -510,7 +517,7 @@ function backendSaleModal() {
     <div class="card-head"><h3>消費項目</h3><button type="button" class="button ghost small" data-action="add-sale-item">＋ 新增項目</button></div><div class="list">${state.saleItems.map(saleItemRow).join("")}</div>
     <label class="field"><span>印花優惠（選填）；第10次剪吹自動計算</span><select id="sale-coupon" name="couponId">${error && state.modal.couponId ? `<option selected disabled>原優惠不適用，請重新選擇</option>` : ""}<option value="">不使用印花優惠（產品及第10次剪吹仍自動計算）</option>${(baseQuote?.availableCoupons || []).map(c=>`<option value="${esc(c.id)}" ${c.id===state.modal.couponId?"selected":""}>${labels[c.kind]}</option>`).join("")}</select></label>
     <p class="muted small">三款剪吹共同累積，第10次自動即單為一個剪吹項目打9折，不發印花；產品95折只計產品，其他服務不會因此打95折；其他服務及其加購產品按優惠前金額每滿$600得1印花（產品按95折計，剪吹金額不計入）。4印花獲9折後繼續累積，8印花獲85折後重新計算；同一消費新獲優惠可即時使用。</p>
-    ${error?`<p class="demo-note" role="alert">${esc(error)}</p>`:`<div class="sale-summary"><div><span>原價</span><strong>${formatMoney(quote.receipt.subtotal)}</strong></div>${!state.modal.couponId ? `<div><span>只限產品95折減免</span><strong>−${formatMoney(quote.receipt.productDiscount || 0)}</strong></div><div><span>第10次剪吹項目減免</span><strong>−${formatMoney(quote.receipt.hairDiscount || 0)}</strong></div>` : ""}<div><span>優惠合計：${esc(quote.receipt.discountLabel)}</span><strong>−${formatMoney(quote.receipt.discount)}</strong></div><div class="total"><span>實收</span><strong>${formatMoney(quote.receipt.finalAmount)}</strong></div><div><span>新增印花</span><strong>+${quote.receipt.earnedStamps}${quote.receipt.bonusStamps?`＋生日 ${quote.receipt.bonusStamps}`:""}</strong></div><div><span>本輪印花進度</span><strong>${quote.receipt.stampProgress}／8</strong></div><div><span>剪吹累積次數</span><strong>${quote.receipt.hairVisits}／10</strong></div></div>`}
+    ${error?`<p class="demo-note" role="alert">${esc(error)}</p>`:`<div class="sale-summary"><div><span>原價</span><strong>${formatMoney(quote.receipt.subtotal)}</strong></div>${saleDiscountRows(quote.receipt,!state.modal.couponId)}<div class="total"><span>實收</span><strong>${formatMoney(quote.receipt.finalAmount)}</strong></div><div><span>新增印花</span><strong>+${quote.receipt.earnedStamps}${quote.receipt.bonusStamps?`＋生日 ${quote.receipt.bonusStamps}`:""}</strong></div><div><span>本輪印花進度</span><strong>${quote.receipt.stampProgress}／8</strong></div><div><span>剪吹累積次數</span><strong>${quote.receipt.hairVisits}／10</strong></div></div>`}
     <button class="button primary full" type="submit" ${error || !stylists.length || state.saleItems.some(i=>!catalog.some(c=>c.id===i.catalogId)) ? "disabled" : ""}>確認消費、付款及更新優惠</button></form></section></div>`;
 }
 

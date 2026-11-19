@@ -2,9 +2,9 @@ import { expiryNotices, rewardStatus } from "./loyalty-v2.js";
 
 const esc = value => String(value ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[c]);
 
-export function expiryNoticeView(members, wallets = {}, at = new Date()) {
+export function expiryNoticeView(members, wallets = {}, at = new Date(), {showEmpty=false} = {}) {
   const notices = expiryNotices(members, wallets, at);
-  if (!notices.length) return "";
+  if (!notices.length) return showEmpty ? `<section class="card" aria-label="印花到期通知"><div class="card-head"><h2>14天內印花到期</h2><span>0 位會員</span></div><p class="muted">暫時沒有14天內到期的印花或未使用印花優惠。</p></section>` : "";
   return `<section class="card" aria-label="印花到期通知"><div class="card-head"><h2>14天內印花到期</h2><span>${notices.length} 位會員</span></div><div class="list">${notices.map(n => `<div class="list-item"><div><strong>${esc(n.name)}</strong><p class="muted">${n.daysRemaining}天後到期 · ${esc(n.expiresAt.slice(0,10))} 00:00</p></div><button class="button small" data-action="view-member" data-member="${esc(n.memberId)}">查看會員</button></div>`).join("")}</div></section>`;
 }
 

@@ -23,6 +23,39 @@ function renderContext() {
   return context;
 }
 
+test('會員詳情最頂先顯示Member Profile，再顯示優惠進度或待核對資訊',()=>{
+  const context=renderContext();
+  runInContext('state.selectedMemberId="member-1";api.backendMode=true;',context);
+  let html=runInContext('renderMemberDetail()',context);
+  assert.ok(html.indexOf('member-profile-hero')<html.indexOf('新制優惠'));
+  assert.ok(html.indexOf('member-profile-hero')<html.indexOf('核對入會日期'));
+  const now=new Date();context.wallet=createRewardWallet({id:'member-1',joined_date:rules.hongKongDateKey(now)},now);
+  runInContext('state.data.rewardWallets={"member-1":wallet};',context);
+  html=runInContext('renderMemberDetail()',context);
+  assert.ok(html.indexOf('member-profile-hero')<html.indexOf('會員優惠進度'));
+});
+
+test('確認消費只顯示實際優惠；零減免及沒有折扣不顯示',()=>{
+  const context=renderContext();
+  for(const [product,hair,total,label] of [[0,0,0,'沒有折扣'],[10,0,10,'會員產品95折'],[0,16.8,16.8,'剪吹9折'],[10,16.8,26.8,'產品及剪吹優惠']]){
+    context.receipt={productDiscount:product,hairDiscount:hair,discount:total,discountLabel:label};
+    const html=runInContext('saleDiscountRows(receipt)',context);
+    assert.equal(html.includes('只限產品95折減免'),product>0);assert.equal(html.includes('第10次剪吹項目減免'),hair>0);
+    assert.equal(html.includes('優惠合計'),total>0);assert.doesNotMatch(html,/沒有折扣|−HK\$0/);
+  }
+  context.receipt={productDiscount:10,hairDiscount:0,discount:60,discountLabel:'4印花優惠'};
+  const html=runInContext('saleDiscountRows(receipt,false)',context);assert.match(html,/4印花優惠/);assert.doesNotMatch(html,/只限產品95折減免/);
+});
+
+test('主管首頁固定保留到期通知空狀態，五個Admin首頁維持兩區',()=>{
+  const context=renderContext();
+  for(const username of ['howood','sally','admin135','admin268','admin567','admin889','admin233']){
+    context.username=username;runInContext('state.profile.username=username;',context);
+    const html=runInContext('renderAdminDashboard()',context),owner=['howood','sally'].includes(username);
+    assert.equal(html.includes('14天內印花到期'),owner);assert.equal(html.includes('暫時沒有14天內到期'),owner);
+  }
+});
+
 test('從會員列按印花直接固定該會員，其他管理員只讀而不重新搜尋',()=>{
   for(const username of ['howood','sally','admin135']){
     const context=renderContext();context.username=username;
