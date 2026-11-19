@@ -33,6 +33,8 @@ jobs:
         env:
           KHAIR_STABLE_REF: 30538597bf2d1d1332eda9abbe3645819f9aeff7
       - run: node scripts/check-test-site.mjs
+        env:
+          KHAIR_STABLE_REF: 30538597bf2d1d1332eda9abbe3645819f9aeff7
       - uses: actions/configure-pages@v5
         with:
           enablement: true
