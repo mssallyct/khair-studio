@@ -13,7 +13,8 @@ export function accountName(principal) {
 export function can(principal, action) {
   const name = accountName(principal);
   if (!name) return false;
-  if (action === "phone.read" || action === "phone.search" || action === "migration") return name === "howood";
+  if (action === "phone.search") return true;
+  if (action === "phone.read" || action === "migration") return name === "howood";
   return COMMON.has(action) || OWNER_ONLY.has(action) && OWNERS.has(name);
 }
 

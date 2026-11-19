@@ -4,6 +4,7 @@ import { createRewardWallet, dateOnly, expiryNotices, membershipYear, quoteRewar
 import { hongKongDateKey, normalizeBirthday, normalizeHongKongPhone, birthdayStampAward } from "../js/rules.js";
 import { summarizeRevenue } from "../js/revenue.js";
 import { DemoStore } from "../js/demo-store.js";
+import { findMembersByPhone } from "../js/member-search.js";
 import { prepareLegacyImport, reviewedOpening } from "./migration.mjs";
 
 // Adapter contract: authenticate verifies a server-side session, never request
@@ -33,6 +34,15 @@ export function createGateway({ repository, authenticate, auth, allowedOrigins =
       const principal = await authenticate(request);
       if (!accountName(principal)) throw failure(401,"請先登入獲授權的管理員帳戶。");
       const now = clock();
+      if(path==='/members/search' && request.method==='POST'){
+        requirePermission(principal,'phone.search');
+        const raw=await request.text();if(raw.length>512)throw failure(413,'搜尋內容過長。');
+        const query=String(JSON.parse(raw).query || '');
+        if(query.length>80)throw failure(400,'搜尋內容過長。');
+        const data=await repository.read();
+        // Lookup uses the private source, but never returns phones to other roles.
+        return reply(200,findMembersByPhone(data.profiles,query,50).map(m=>memberFor(principal,m)),headers);
+      }
       if(path==="/logout" && request.method==="POST"){if(!auth?.logout)throw failure(503,"登入後端尚未完成設定。");await auth.logout(request);return reply(200,{ok:true},headers);}
       if (request.method === "GET" || readPost) {
         if (path === "/session") return reply(200, {id:principal.id,username:principal.username,name:principal.name,role:"admin",active:true}, headers);

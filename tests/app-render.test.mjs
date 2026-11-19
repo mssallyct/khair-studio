@@ -23,6 +23,21 @@ function renderContext() {
   return context;
 }
 
+test('會員電話欄只給Howood；新增消費改電話搜尋而不預選第一位會員',()=>{
+  for(const username of ['howood','sally','admin135','admin268','admin567','admin889','admin233']){
+    const context=renderContext();context.username=username;
+    runInContext('state.profile.username=username;api.backendMode=true;state.data.profiles[0].phone="91234567";',context);
+    const html=runInContext('renderMembers()',context);
+    assert.equal(html.includes('<th>電話</th>'),username==='howood');
+    assert.equal(html.includes('91234567'),username==='howood');
+    assert.match(html,/搜尋電話、姓名或電郵/);
+    runInContext('state.modal.memberId=null;',context);
+    const modal=runInContext('saleModal()',context);
+    assert.match(modal,/id="sale-member-phone"/);assert.doesNotMatch(modal,/<select name="memberId"/);
+    assert.match(modal,/請先用電話搜尋並選擇會員/);assert.match(modal,/type="submit" disabled/);
+  }
+});
+
 test("消費表單可選本單新印花並正確顯示結餘", () => {
   const context = renderContext();
   const html = runInContext("saleModal()",context);
@@ -108,8 +123,8 @@ test("後端剪吹第10次顯示9折而零印花，重畫不多加次數",()=>{
   const context=renderContext(),now=new Date(),wallet=createRewardWallet({id:"member-1",joined_date:rules.hongKongDateKey(now)},now);wallet.hairVisits=9;
   context.wallet=wallet;
   runInContext('api.backendMode=true;state.data.rewardWallets={"member-1":wallet};state.data.catalog=[{id:"svc-20261119-01",kind:"service",name:"洗剪吹",price:168,active:true}];state.saleItems=[catalogToSaleItem(state.data.catalog[0])];state.modal.requestId="haircut-ui-test-123";',context);
-  assert.match(runInContext("saleModal()",context),/剪吹10次・9折/);
-  runInContext("state.modal.couponId=backendSaleQuote(null).addedCoupons[0].id;",context);
+  assert.match(runInContext("saleModal()",context),/第10次剪吹・該剪吹項目9折/);
+  assert.equal(runInContext('backendSaleQuote().receipt.automaticHairApplied',context),true);
   const html=runInContext("saleModal()",context);assert.ok(html.includes(rules.formatMoney(151.2)));assert.match(html,/新增印花<\/span><strong>\+0/);assert.match(html,/剪吹累積次數<\/span><strong>0／10/);
   runInContext("saleModal()",context);assert.equal(wallet.hairVisits,9);
 });

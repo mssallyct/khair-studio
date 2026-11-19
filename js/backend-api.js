@@ -36,6 +36,7 @@ export class BackendApi {
     return result;
   }
   async getCatalog(){return this.request("/catalog");}
+  async searchMembers(query){return this.request('/members/search',{method:'POST',body:{query}});}
   async createMember(input){return this.request("/members",{method:"POST",body:input});}
   async updateMemberJoinedDate(memberId,joinedDate){return this.request("/members/joined-date",{method:"POST",body:{memberId,joinedDate}});}
   async reviewRewardOpening(input){return this.request("/members/rewards/opening",{method:"POST",body:input});}

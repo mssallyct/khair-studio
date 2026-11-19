@@ -240,8 +240,8 @@ function renderAdminAppointments() {
 function renderMembers() {
   const members = state.data.profiles.filter(item => item.role === "member");
   return `${expiryNoticeView(members, state.data.rewardWallets)}<section class="card"><div class="card-head"><h2>會員名單</h2><div class="actions"><span class="muted">${members.length} 位會員</span><button class="button small" data-action="new-member">＋ 新增會員</button></div></div>
-    <div class="filter-bar"><input id="member-search" placeholder="${can(state.profile,"phone.read") ? "搜尋姓名、電話或電郵" : "搜尋姓名或電郵"}"></div>
-    <div class="table-wrap"><table><thead><tr><th>會員</th><th>電話</th><th>生日（月日）</th><th>入會年份</th><th>會員年資</th><th>印花</th><th>介紹編號</th><th>操作</th></tr></thead><tbody id="member-table-body">${members.map(memberRow).join("")}</tbody></table></div>
+    <div class="filter-bar"><input id="member-search" placeholder="🔍 搜尋電話、姓名或電郵"></div>
+    <div class="table-wrap"><table><thead><tr><th>會員</th>${can(state.profile,"phone.read") ? "<th>電話</th>" : ""}<th>生日（月日）</th><th>入會年份</th><th>會員年資</th><th>印花</th><th>介紹編號</th><th>操作</th></tr></thead><tbody id="member-table-body">${members.map(memberRow).join("")}</tbody></table></div>
   </section>`;
 }
 
@@ -257,7 +257,7 @@ function renderMemberDetail() {
     <section class="card member-profile-hero">
       <button class="text-button member-back" data-view="members">← 返回會員名單</button>
       <div class="member-profile-heading">
-        <div><p class="eyebrow">Member Profile</p><h2>${esc(member.name)}</h2><p class="muted">${esc(member.phone || "未有電話")} · ${esc(member.email || "未有電郵")}</p></div>
+        <div><p class="eyebrow">Member Profile</p><h2>${esc(member.name)}</h2><p class="muted">${can(state.profile,"phone.read") ? `${esc(member.phone || "未有電話")} · ` : ""}${esc(member.email || "未有電郵")}</p></div>
         <div class="actions member-profile-actions"><button class="button gold" data-action="sale-member" data-member="${esc(member.id)}">＋ 新增消費</button><button class="button ghost" data-action="stamps-member" data-member="${esc(member.id)}">調整印花</button></div>
       </div>
     </section>
@@ -269,10 +269,10 @@ function renderMemberDetail() {
     </div>
     <div class="grid cols-2">
       <section class="card"><div class="card-head"><h2>基本資料</h2><span class="badge active">有效會員</span></div><div class="list">
-        ${profileRow("姓名", member.name)}${profileRow("電話", member.phone || "—")}${profileRow("電郵", member.email || "—")}${profileRow("生日（月日）", formatBirthday(member.birthday))}${profileRow("會員編號", member.referral_code || "—")}${profileRow("入會日期", membership.joinedDate || "未記錄")}${profileRow("入會年份", membership.joinedYear ?? "未記錄")}${profileRow("會員年資", membership.label)}
+        ${profileRow("姓名", member.name)}${can(state.profile,"phone.read") ? profileRow("電話", member.phone || "—") : ""}${profileRow("電郵", member.email || "—")}${profileRow("生日（月日）", formatBirthday(member.birthday))}${profileRow("會員編號", member.referral_code || "—")}${profileRow("入會日期", membership.joinedDate || "未記錄")}${profileRow("入會年份", membership.joinedYear ?? "未記錄")}${profileRow("會員年資", membership.label)}
       </div><p class="muted small">年資按已記錄的入會日期及香港日期自動計算已滿年、月；未有日期不會估算。</p></section>
       <section class="card"><div class="card-head"><h2>介紹紀錄</h2></div><div class="list">
-        ${profileRow("介紹人", referrer ? `${referrer.name} · ${referrer.phone || "未有電話"}` : "沒有介紹人")}${profileRow("已介紹會員人數", String(referredMembers.length))}${profileRow("已獲介紹印花", String(rewardedReferralCount))}${profileRow("已介紹會員", referralNames)}
+        ${profileRow("介紹人", referrer ? `${referrer.name}${can(state.profile,"phone.read") ? ` · ${referrer.phone || "未有電話"}` : ""}` : "沒有介紹人")}${profileRow("已介紹會員人數", String(referredMembers.length))}${profileRow("已獲介紹印花", String(rewardedReferralCount))}${profileRow("已介紹會員", referralNames)}
       </div></section>
     </div>
     <div class="grid cols-2">
@@ -483,14 +483,15 @@ function saleModal() {
 
 function backendSaleQuote(couponId = state.modal.couponId || null) {
   const members=state.data.profiles.filter(p=>p.role==="member");
-  const member=members.find(p=>p.id===(state.modal.memberId || members[0]?.id));
+  const member=members.find(p=>p.id===state.modal.memberId);
+  if(!member)throw new Error("請先用電話搜尋並選擇會員。");
   const wallet=state.data.rewardWallets?.[member?.id];
   return quoteRewards({wallet,items:state.saleItems,saleId:state.modal.requestId,couponId,birthdayBonus:birthdayStampAward(member,state.data.stamps)});
 }
 
 function backendSaleModal() {
   const members=state.data.profiles.filter(p=>p.role==="member");
-  const selected=state.modal.memberId || members[0]?.id;
+  const selected=state.modal.memberId || "";
   const appointment=state.data.appointments.find(a=>a.id===state.modal.appointmentId && a.member_id===selected);
   const catalog=activeCatalogItems(),stylists=activeStylistItems(),assistants=activeAssistantItems();
   state.modal.requestId ||= crypto.randomUUID();
@@ -502,14 +503,14 @@ function backendSaleModal() {
   try{baseQuote=backendSaleQuote(null);quote=backendSaleQuote();}catch(e){error=e.message;}
   const labels={hair10:"剪吹10次・9折",stamp4:"4印花・9折",stamp8:"8印花・85折"};
   return `<div class="modal-backdrop"><section class="modal wide"><div class="modal-head"><h2>記錄消費</h2><button class="icon-button" data-action="close-modal">×</button></div><form id="sale-form">
-    <div class="form-grid"><label class="field"><span>會員</span><select name="memberId" id="sale-member" required>${members.map(m=>`<option value="${esc(m.id)}" ${m.id===selected?"selected":""}>${esc(m.name)}</option>`).join("")}</select></label>
+    <div class="form-grid">${memberPhoneLookup({name:"memberId",inputId:"sale-member-phone",label:"會員（電話搜尋）",required:true,selectedId:selected})}
     <label class="field"><span>相關預約（選填）</span><select name="appointmentId" id="sale-appointment"><option value="">沒有</option>${state.data.appointments.filter(a=>a.member_id===selected && ["pending","confirmed"].includes(a.status)).map(a=>`<option value="${esc(a.id)}" ${a.id===state.modal.appointmentId?"selected":""}>${formatDateTime(a.start_at)} · ${serviceName(a.service_id)}</option>`).join("")}</select></label>
     <label class="field"><span>是次跟進髮型師</span><select name="stylistId" id="sale-stylist" required>${stylists.map(s=>`<option value="${esc(s.id)}" ${s.id===(state.modal.stylistId || appointment?.stylist_id || stylists[0]?.id)?"selected":""}>${esc(s.name)}</option>`).join("")}</select></label>
     <label class="field"><span>是次跟進髮型助理（選填）</span><select name="assistantId" id="sale-assistant"><option value="">沒有／不適用</option>${assistants.map(a=>`<option value="${esc(a.id)}" ${a.id===state.modal.assistantId?"selected":""}>${esc(a.name)}</option>`).join("")}</select></label></div>
     <div class="card-head"><h3>消費項目</h3><button type="button" class="button ghost small" data-action="add-sale-item">＋ 新增項目</button></div><div class="list">${state.saleItems.map(saleItemRow).join("")}</div>
-    <label class="field"><span>使用優惠（每單一項、不疊加）</span><select id="sale-coupon" name="couponId">${error && state.modal.couponId ? `<option selected disabled>原優惠不適用，請重新選擇</option>` : ""}<option value="">不使用</option>${(baseQuote?.availableCoupons || []).map(c=>`<option value="${esc(c.id)}" ${c.id===state.modal.couponId?"selected":""}>${labels[c.kind]}</option>`).join("")}</select></label>
-    <p class="muted small">三款剪吹合計10次獲一次9折，不發印花；其他服務及其加購產品按優惠前金額每滿$600得1印花（產品按95折計，剪吹金額不計入）。4印花獲9折後繼續累積，8印花獲85折後重新計算；同一消費新獲優惠可即時使用。</p>
-    ${error?`<p class="demo-note" role="alert">${esc(error)}</p>`:`<div class="sale-summary"><div><span>原價</span><strong>${formatMoney(quote.receipt.subtotal)}</strong></div><div><span>${esc(quote.receipt.discountLabel)}</span><strong>−${formatMoney(quote.receipt.discount)}</strong></div><div class="total"><span>實收</span><strong>${formatMoney(quote.receipt.finalAmount)}</strong></div><div><span>新增印花</span><strong>+${quote.receipt.earnedStamps}${quote.receipt.bonusStamps?`＋生日 ${quote.receipt.bonusStamps}`:""}</strong></div><div><span>本輪印花進度</span><strong>${quote.receipt.stampProgress}／8</strong></div><div><span>剪吹累積次數</span><strong>${quote.receipt.hairVisits}／10</strong></div></div>`}
+    <label class="field"><span>印花優惠（選填）；第10次剪吹自動計算</span><select id="sale-coupon" name="couponId">${error && state.modal.couponId ? `<option selected disabled>原優惠不適用，請重新選擇</option>` : ""}<option value="">不使用印花優惠（產品及第10次剪吹仍自動計算）</option>${(baseQuote?.availableCoupons || []).map(c=>`<option value="${esc(c.id)}" ${c.id===state.modal.couponId?"selected":""}>${labels[c.kind]}</option>`).join("")}</select></label>
+    <p class="muted small">三款剪吹共同累積，第10次自動即單為一個剪吹項目打9折，不發印花；產品95折只計產品，其他服務不會因此打95折；其他服務及其加購產品按優惠前金額每滿$600得1印花（產品按95折計，剪吹金額不計入）。4印花獲9折後繼續累積，8印花獲85折後重新計算；同一消費新獲優惠可即時使用。</p>
+    ${error?`<p class="demo-note" role="alert">${esc(error)}</p>`:`<div class="sale-summary"><div><span>原價</span><strong>${formatMoney(quote.receipt.subtotal)}</strong></div>${!state.modal.couponId ? `<div><span>只限產品95折減免</span><strong>−${formatMoney(quote.receipt.productDiscount || 0)}</strong></div><div><span>第10次剪吹項目減免</span><strong>−${formatMoney(quote.receipt.hairDiscount || 0)}</strong></div>` : ""}<div><span>優惠合計：${esc(quote.receipt.discountLabel)}</span><strong>−${formatMoney(quote.receipt.discount)}</strong></div><div class="total"><span>實收</span><strong>${formatMoney(quote.receipt.finalAmount)}</strong></div><div><span>新增印花</span><strong>+${quote.receipt.earnedStamps}${quote.receipt.bonusStamps?`＋生日 ${quote.receipt.bonusStamps}`:""}</strong></div><div><span>本輪印花進度</span><strong>${quote.receipt.stampProgress}／8</strong></div><div><span>剪吹累積次數</span><strong>${quote.receipt.hairVisits}／10</strong></div></div>`}
     <button class="button primary full" type="submit" ${error || !stylists.length || state.saleItems.some(i=>!catalog.some(c=>c.id===i.catalogId)) ? "disabled" : ""}>確認消費、付款及更新優惠</button></form></section></div>`;
 }
 
@@ -548,7 +549,7 @@ function adminAppointmentTable(items) {
 
 function memberRow(item) {
   const membership = membershipInfo(item);
-  return `<tr data-member-search="${esc(`${item.name} ${item.phone || ""} ${item.email || ""}`.toLowerCase())}"><td><button class="member-link" data-action="view-member" data-member="${esc(item.id)}"><strong>${esc(item.name)}</strong><span>${esc(item.email || "未有電郵")}</span></button></td><td>${esc(item.phone||"—")}</td><td>${esc(formatBirthday(item.birthday))}</td><td>${esc(membership.joinedYear ?? "未記錄")}</td><td>${esc(membership.label)}</td><td>${memberBalance(item.id)}</td><td>${esc(item.referral_code||"—")}</td><td><div class="actions"><button class="button small" data-action="view-member" data-member="${esc(item.id)}">查看資料</button><button class="button ghost small" data-action="sale-member" data-member="${esc(item.id)}">消費</button><button class="button ghost small" data-action="stamps-member" data-member="${esc(item.id)}">印花</button></div></td></tr>`;
+  return `<tr data-member-id="${esc(item.id)}" data-member-search="${esc(`${item.name} ${can(state.profile,"phone.read") ? item.phone || "" : ""} ${item.email || ""}`.toLowerCase())}"><td><button class="member-link" data-action="view-member" data-member="${esc(item.id)}"><strong>${esc(item.name)}</strong><span>${esc(item.email || "未有電郵")}</span></button></td>${can(state.profile,"phone.read") ? `<td>${esc(item.phone||"—")}</td>` : ""}<td>${esc(formatBirthday(item.birthday))}</td><td>${esc(membership.joinedYear ?? "未記錄")}</td><td>${esc(membership.label)}</td><td>${memberBalance(item.id)}</td><td>${esc(item.referral_code||"—")}</td><td><div class="actions"><button class="button small" data-action="view-member" data-member="${esc(item.id)}">查看資料</button><button class="button ghost small" data-action="sale-member" data-member="${esc(item.id)}">消費</button><button class="button ghost small" data-action="stamps-member" data-member="${esc(item.id)}">印花</button></div></td></tr>`;
 }
 
 function memberSaleHistory(items) {
@@ -834,69 +835,57 @@ function activeCatalogItems() { return (state.data.catalog || []).filter(item =>
 function activeStylistItems() { return (state.data.stylists || []).filter(item => item.active !== false); }
 function activeAssistantItems() { return (state.data.assistants || []).filter(item => item.active !== false); }
 
-function filterMembers(event) {
-  const query=event.target.value.trim().toLowerCase();
-  root.querySelectorAll("[data-member-search]").forEach(row=>row.classList.toggle("hidden",!row.dataset.memberSearch.includes(query)));
+let memberSearchSequence=0;
+async function filterMembers(event) {
+  const input=event.target, query=input.value.trim().toLowerCase(),sequence=++memberSearchSequence;
+  let ids=new Set();
+  try {
+    if(api.backendMode && normalizePhoneSearch(query).length>=3)ids=new Set((await api.searchMembers(query)).map(m=>m.id));
+    if(sequence!==memberSearchSequence || !input.isConnected)return;
+    root.querySelectorAll("[data-member-search]").forEach(row=>row.classList.toggle("hidden",!row.dataset.memberSearch.includes(query) && !ids.has(row.dataset.memberId)));
+  }catch(error){if(sequence===memberSearchSequence)toast(error.message,true);}
 }
-
-function memberPhoneLookup({ name, inputId, label, required = false }) {
-  const phone = can(state.profile,"phone.search");
-  if (!phone) label = label.replace(/電話/g,"姓名／會員編號");
+function memberPhoneLookup({name,inputId,label,required=false,selectedId=""}) {
+  const member=state.data.profiles.find(m=>m.id===selectedId && m.role==="member");
   return `<div class="field span-2 member-lookup" data-member-lookup>
     <label class="field-label" for="${inputId}">${esc(label)}</label>
-    <div class="member-lookup-input"><span class="member-lookup-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"></circle><path d="m16.5 16.5 4 4"></path></svg></span><input id="${inputId}" data-member-lookup-input type="${phone ? "tel" : "text"}" autocomplete="off" placeholder="${phone ? "輸入最少3個電話數字" : "輸入會員姓名或會員編號"}" ${required ? "required" : ""}></div>
-    <input type="hidden" name="${name}" data-member-lookup-value value="">
+    <div class="member-lookup-input"><span class="member-lookup-icon" aria-hidden="true">⌕</span><input id="${inputId}" data-member-lookup-input type="tel" autocomplete="off" placeholder="輸入最少3個電話數字" value="${esc(member ? (can(state.profile,"phone.read") ? member.phone || member.name : member.name) : "")}" ${required?"required":""}></div>
+    <input type="hidden" name="${name}" data-member-lookup-value value="${esc(member?.id || "")}">
     <div class="member-lookup-results" data-member-lookup-results aria-live="polite"></div>
-    <div class="member-lookup-selected" data-member-lookup-selected hidden></div>
+    <div class="member-lookup-selected" data-member-lookup-selected ${member?"":"hidden"}>${member?`已選擇：${esc(member.name)} <button type="button" data-action="clear-member-lookup">重新搜尋</button>`:""}</div>
   </div>`;
 }
-
-function updateMemberLookupResults(event) {
-  const lookup = event.target.closest("[data-member-lookup]");
-  const results = lookup.querySelector("[data-member-lookup-results]");
-  const selected = lookup.querySelector("[data-member-lookup-selected]");
-  const value = lookup.querySelector("[data-member-lookup-value]");
-  const query = event.target.value.trim();
-  const digits = normalizePhoneSearch(query);
-  const phone = can(state.profile,"phone.search");
-
-  value.value = "";
-  selected.hidden = true;
-  selected.innerHTML = "";
-  if (!query) { results.innerHTML = ""; return; }
-  if (phone && digits.length < 3) {
-    results.innerHTML = `<p class="member-lookup-hint">請再輸入電話號碼，最少3個數字。</p>`;
-    return;
-  }
-
-  const matches = phone ? findMembersByPhone(state.data.profiles, query) : state.data.profiles.filter(m=>m.role==="member" && `${m.name} ${m.referral_code || ""}`.toLowerCase().includes(query.toLowerCase())).slice(0,20);
-  results.innerHTML = matches.length
-    ? matches.map(member => `<button class="member-lookup-result" type="button" data-action="select-member-lookup" data-member-id="${esc(member.id)}"><span>${esc(member.name)}</span><strong>${esc(member.phone || "未有電話")}</strong></button>`).join("")
-    : `<p class="member-lookup-hint no-result">找不到符合條件的會員。</p>`;
+async function updateMemberLookupResults(event) {
+  const input=event.target,lookup=input.closest("[data-member-lookup]"),results=lookup.querySelector("[data-member-lookup-results]"),selected=lookup.querySelector("[data-member-lookup-selected]"),value=lookup.querySelector("[data-member-lookup-value]");
+  const query=input.value.trim(),sequence=Number(lookup.dataset.sequence||0)+1;lookup.dataset.sequence=String(sequence);
+  value.value="";selected.hidden=true;selected.innerHTML="";
+  if(lookup.closest("#sale-form")){state.modal.memberId="";state.modal.couponId=null;lookup.closest("form").querySelector('[type="submit"]').disabled=true;}
+  if(!query){results.innerHTML="";return;}
+  if(normalizePhoneSearch(query).length<3){results.innerHTML='<p class="member-lookup-hint">請輸入最少3個電話數字。</p>';return;}
+  results.innerHTML='<p class="member-lookup-hint">搜尋中…</p>';
+  try{
+    const matches=api.backendMode ? await api.searchMembers(query) : findMembersByPhone(state.data.profiles,query);
+    if(lookup.dataset.sequence!==String(sequence)||!input.isConnected)return;
+    results.innerHTML=matches.length ? matches.map(m=>`<button class="member-lookup-result" type="button" data-action="select-member-lookup" data-member-id="${esc(m.id)}"><span>${esc(m.name)}</span>${can(state.profile,"phone.read")?`<strong>${esc(m.phone || "")}</strong>`:""}</button>`).join("") : '<p class="member-lookup-hint no-result">找不到會員，請核對電話。</p>';
+  }catch(error){if(input.isConnected && lookup.dataset.sequence===String(sequence))results.textContent=error.message;}
 }
-
 function selectMemberLookup(target) {
-  const lookup = target.closest("[data-member-lookup]");
-  const member = state.data.profiles.find(item => item.id === target.dataset.memberId && item.role === "member");
-  if (!member) return;
-  lookup.querySelector("[data-member-lookup-input]").value = can(state.profile,"phone.search") ? member.phone || "" : member.name;
-  lookup.querySelector("[data-member-lookup-value]").value = member.id;
-  lookup.querySelector("[data-member-lookup-results]").innerHTML = "";
-  const selected = lookup.querySelector("[data-member-lookup-selected]");
-  selected.hidden = false;
-  selected.innerHTML = `<span>已選擇：<strong>${esc(member.name)}</strong> · ${esc(member.phone || "未有電話")}</span><button type="button" data-action="clear-member-lookup">重新搜尋</button>`;
+  const lookup=target.closest("[data-member-lookup]"),member=state.data.profiles.find(m=>m.id===target.dataset.memberId && m.role==="member");if(!member)return;
+  if(lookup.closest("#sale-form")){Object.assign(state.modal,{memberId:member.id,appointmentId:null,couponId:null,requestId:crypto.randomUUID()});render();return;}
+  lookup.dataset.sequence=String(Number(lookup.dataset.sequence||0)+1);
+  lookup.querySelector("[data-member-lookup-input]").value=can(state.profile,"phone.read")?member.phone || member.name:member.name;
+  lookup.querySelector("[data-member-lookup-value]").value=member.id;
+  lookup.querySelector("[data-member-lookup-results]").innerHTML="";
+  const selected=lookup.querySelector("[data-member-lookup-selected]");selected.hidden=false;
+  selected.innerHTML=`<span>已選擇：<strong>${esc(member.name)}</strong>${can(state.profile,"phone.read")?` · ${esc(member.phone || "")}`:""}</span><button type="button" data-action="clear-member-lookup">重新搜尋</button>`;
 }
-
 function clearMemberLookup(target) {
-  const lookup = target.closest("[data-member-lookup]");
-  const input = lookup.querySelector("[data-member-lookup-input]");
-  input.value = "";
-  lookup.querySelector("[data-member-lookup-value]").value = "";
-  lookup.querySelector("[data-member-lookup-results]").innerHTML = "";
-  const selected = lookup.querySelector("[data-member-lookup-selected]");
-  selected.hidden = true;
-  selected.innerHTML = "";
-  input.focus();
+  const lookup=target.closest("[data-member-lookup]");
+  if(lookup.closest("#sale-form")){Object.assign(state.modal,{memberId:"",appointmentId:null,couponId:null,requestId:crypto.randomUUID()});render();root.querySelector("#sale-member-phone")?.focus();return;}
+  lookup.dataset.sequence=String(Number(lookup.dataset.sequence||0)+1);
+  const input=lookup.querySelector("[data-member-lookup-input]");input.value="";
+  lookup.querySelector("[data-member-lookup-value]").value="";lookup.querySelector("[data-member-lookup-results]").innerHTML="";
+  const selected=lookup.querySelector("[data-member-lookup-selected]");selected.hidden=true;selected.innerHTML="";input.focus();
 }
 
 async function busy(button, fn) {

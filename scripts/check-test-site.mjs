@@ -10,6 +10,7 @@ const api=await createTestingApi({storage,clock});
 for(const name of ['howood','sally','Admin135','Admin268','Admin567','Admin889','Admin233']){
   await api.signIn(name);const d=await api.getAdminDashboard();
   assert.equal(JSON.stringify(d).includes('90000001'),name==='howood');
+  const matches=await api.searchMembers('90000001');assert.equal(matches[0].id,'test-member-0');assert.equal(Object.hasOwn(matches[0],'phone'),name==='howood');
   if(name.startsWith('Admin'))await assert.rejects(api.createStylist('不應新增'));
   await api.signOut();
 }
@@ -19,7 +20,7 @@ for(const [memberId,kind] of [['test-member-0','hair10'],['test-member-1','stamp
   assert.ok(catalog);const requestId=`sandbox-transaction-${kind}`,items=[{catalogId:catalog.id,name:catalog.name,kind:catalog.kind,reward_group:catalog.reward_group,unitPrice:catalog.price,quantity:1}];
   const q=quoteRewards({wallet:d.rewardWallets[memberId],items,saleId:requestId,at:clock()});
   const coupon=q.wallet.coupons.find(c=>c.kind===kind);assert.ok(coupon);
-  const input={requestId,memberId,stylistId:'test-stylist',items,couponId:coupon.id};
+  const input={requestId,memberId,stylistId:'test-stylist',items,couponId:kind==='hair10'?null:coupon.id};
   await api.completeSale(input);await api.completeSale(input);
 }
 const d=await api.getAdminDashboard();assert.equal(d.sales.length,3);assert.equal(d.rewardWallets['test-member-0'].hairVisits,0);assert.equal(d.rewardWallets['test-member-1'].stampProgress,4);assert.equal(d.rewardWallets['test-member-2'].stampProgress,0);

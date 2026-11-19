@@ -8,7 +8,7 @@ test("七個管理員的權限矩陣，只有Howood可讀電話",()=>{
   for(const name of ACCOUNT_NAMES){
     const p=principal(name),owner=["sally","howood"].includes(name);
     for(const action of ["settings","audit","export","revenue","catalog.write","team.write"])assert.equal(can(p,action),owner,`${name} ${action}`);
-    assert.equal(can(p,"phone.read"),name==="howood");assert.equal(can(p,"phone.search"),name==="howood");
+    assert.equal(can(p,"phone.read"),name==="howood");assert.equal(can(p,"phone.search"),true);
     if(!owner){assert.deepEqual(homeSections(p),["pending","today"]);assert.deepEqual(visibleViews(p),["dashboard","appointments","members","sales"]);}
     for(const action of ["members","appointments","sales","members.create","sales.create"])assert.equal(can(p,action),true);
   }

@@ -10,6 +10,22 @@ const product = price => ({kind:"product",name:"產品",quantity:1,unitPrice:pri
 const fresh = () => createRewardWallet(member,at);
 const quote = (wallet,items,saleId="sale-1",more={}) => quoteRewards({wallet,items,saleId,at,...more});
 
+test('產品95折只計產品；第10次剪吹自動只折一個剪吹項目，其他服務原價',()=>{
+  const normal=quote(fresh(),[hair(),product(200)]);assert.equal(normal.receipt.finalAmount,358);assert.equal(normal.receipt.productDiscount,10);assert.equal(normal.receipt.hairDiscount,0);
+  for(const [name,price]of [['洗剪吹',168],['洗吹造型',108],['單剪',130]]){
+    const wallet=fresh();wallet.hairVisits=9;
+    const q=quote(wallet,[hair(name,price),product(200),service(650)]);
+    assert.equal(q.receipt.finalAmount,price*.9+190+650);assert.equal(q.receipt.automaticHairApplied,true);
+    assert.equal(q.receipt.hairVisits,0);assert.ok(q.addedCoupons.find(c=>c.kind==='hair10').usedAt);
+    assert.equal(q.availableCoupons.some(c=>c.kind==='hair10'),false);
+    assert.equal(rewardStatus(q.wallet,at).available.some(c=>c.kind==='hair10'),false);
+    assert.equal(quote(q.wallet,[hair(name,price)],'next').receipt.finalAmount,price);
+  }
+  const wallet=fresh();wallet.hairVisits=9;
+  assert.equal(quote(wallet,[hair(),product(200)]).receipt.finalAmount,341.2);
+  assert.equal(quote(wallet,[product(200)]).receipt.hairVisits,9);
+});
+
 test("三款剪吹加產品滿600均零印花、零生日印花；每張單最多計一次",()=>{
   for(const name of ["洗剪吹","洗吹造型","單剪"]){
     const q=quote(fresh(),[hair(name),product(1000)],"test",{birthdayBonus:1});
@@ -79,7 +95,7 @@ test("香港入會周年一年到期、14天提示、周年自動新年度；剪
   assert.equal(expiryNotices([m],{m1:wallet},date).length,1);
   const before=JSON.stringify(wallet);
   const after=rewardStatus(wallet,new Date("2027-11-30T16:00:00Z"));
-  assert.equal(after.stampProgress,0);assert.deepEqual(after.available.map(c=>c.kind),["hair10"]);
+  assert.equal(after.stampProgress,0);assert.deepEqual(after.available.map(c=>c.kind),[]);
   assert.equal(after.period.start,"2027-12-01");assert.equal(after.expiring,false);assert.equal(JSON.stringify(wallet),before);
   const next=quoteRewards({wallet,items:[service()],saleId:"new-year",at:new Date("2027-11-30T16:00:00Z")});
   assert.equal(next.receipt.stampProgress,1);assert.ok(next.wallet.coupons.find(c=>c.kind==="stamp4").expired);

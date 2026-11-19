@@ -111,7 +111,8 @@ export function quoteRewards({ wallet, items, saleId, at = new Date(), couponId 
     if (next.stampProgress === 4) award("stamp4", .10, period.expiresAt);
     if (next.stampProgress === 8) { award("stamp8", .15, period.expiresAt); next.stampProgress = 0; next.stampCycle = (next.stampCycle || 0) + 1; }
   }
-  if (hairVisit && ++next.hairVisits === 10) { award("hair10", .10); next.hairVisits = 0; }
+  let automaticHair = null;
+  if (hairVisit && ++next.hairVisits === 10) { award("hair10", .10); automaticHair=addedCoupons.at(-1); next.hairVisits = 0; }
   const availableCoupons = next.coupons.filter(c => !c.usedAt && !c.expired && (c.kind === "hair10" ? hairVisit : eligible.length > 0));
   let selected = null;
   if (couponId) {
@@ -120,10 +121,19 @@ export function quoteRewards({ wallet, items, saleId, at = new Date(), couponId 
     selected.usedAt = timestamp;
     selected.usedOnSaleId = saleId;
   }
-  const discount = selected ? Math.round(total * selected.rate) : ordinaryDiscount;
+  // Every tenth visit applies immediately to one haircut/blow-dry service,
+  // not to other services/products on the same bill. Product 5% stays separate.
+  const hairCoupon=automaticHair || (selected?.kind==='hair10' ? selected : null);
+  if(hairCoupon){hairCoupon.usedAt=timestamp;hairCoupon.usedOnSaleId=saleId;}
+  const hairDiscount=hairCoupon ? Math.round(Math.round(Number(lines.find(isHairVisitItem).unitPrice)*100)*.1) : 0;
+  const ordinaryAndHair=ordinaryDiscount+hairDiscount;
+  // Existing optional stamp whole-bill promotions remain non-stacking.
+  const discount = selected && selected.kind!=='hair10' ? Math.max(Math.round(total*selected.rate),ordinaryAndHair) : ordinaryAndHair;
   const receipt = { saleId, memberId: next.memberId, policyVersion: LOYALTY_VERSION, completedAt: timestamp, subtotal: total / 100, discount: discount / 100, finalAmount: (total - discount) / 100, stampEarningAmount: earningCents / 100, earnedStamps: earned, bonusStamps: bonus, hairVisitsEarned: hairVisit ? 1 : 0, couponId: selected?.id || null, discountLabel: selected ? ({hair10:"剪吹10次・全單9折",stamp4:"4印花里程碑・全單9折",stamp8:"8印花里程碑・全單85折"})[selected.kind] : ordinaryDiscount ? "會員產品95折" : "沒有折扣", stampProgress: next.stampProgress, hairVisits: next.hairVisits };
   next.receipts[saleId] = receipt;
-  return { receipt, wallet: next, availableCoupons: availableCoupons.map(c => ({...c})), addedCoupons: addedCoupons.map(c => ({...c})) };
+  Object.assign(receipt,{productDiscount:ordinaryDiscount/100,hairDiscount:hairDiscount/100,automaticHairApplied:Boolean(automaticHair)});
+  if(hairCoupon && (!selected || selected.kind==='hair10')){receipt.couponId=hairCoupon.id;receipt.discountLabel='第10次剪吹・該剪吹項目9折'+(ordinaryDiscount?'＋產品95折':'');}
+  return { receipt, wallet: next, availableCoupons: availableCoupons.filter(c=>c!==automaticHair).map(c => ({...c})), addedCoupons: addedCoupons.map(c => ({...c})) };
 }
 
 export function expiryNotices(members, wallets, at = new Date()) {

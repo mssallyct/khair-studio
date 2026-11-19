@@ -19,6 +19,18 @@ function harness(username="howood"){
   return {call,data:()=>data,counts:()=>({reads,writes}),replace:value=>data=value};
 }
 
+test('所有管理員可按電話搜尋，只有Howood的結果包含電話；搜尋不更改資料',async()=>{
+  for(const name of ['howood','sally','admin135','admin268','admin567','admin889','admin233']){
+    const h=harness(name),before=JSON.stringify(h.data());
+    const response=await h.call('/members/search',{query:'+852 9123 4567'});assert.equal(response.status,200);
+    const rows=await response.json();assert.equal(rows.length,1);assert.equal(rows[0].id,'m1');
+    assert.equal(Object.hasOwn(rows[0],'phone'),name==='howood');
+    assert.deepEqual(await (await h.call('/members/search',{query:'91'})).json(),[]);
+    assert.equal((await h.call('/members/search',{query:'91234567'},{headers:{Authorization:''}})).status,401);
+    assert.equal(JSON.stringify(h.data()),before);assert.equal(h.counts().writes,0);
+  }
+});
+
 test("缺少後端設定一律503、不退回本機資料；無登入401、未授權來源403",async()=>{
   const offline=createGateway();assert.equal((await offline(new Request("https://backend.test/api/members"))).status,503);
   const h=harness();assert.equal((await h.call("/members",null,{headers:{Authorization:""}})).status,401);
