@@ -16,6 +16,7 @@ const state = {
   session: null,
   profile: null,
   data: null,
+  adminAccounts: [],
   view: "dashboard",
   loading: false,
   modal: null,
@@ -52,6 +53,7 @@ async function refresh() {
   state.loading = true; render();
   try {
     state.data = state.profile.role === "admin" ? displayDataFor(state.profile, await api.getAdminDashboard()) : await api.getMemberDashboard(state.profile.id);
+    state.adminAccounts = api.backendMode && !api.testingMode && can(state.profile,"admins.manage") ? await api.listAdmins() : [];
   } catch (error) { toast(error.message, true); }
   state.loading = false; render();
 }
@@ -97,7 +99,7 @@ function loginForm() {
 function renderApp() {
   const admin = state.profile.role === "admin";
   const nav = (admin ? [
-    ["dashboard", "◫", "營運總覽"], ["appointments", "◷", "預約管理"], ["members", "◎", "會員管理"], ["sales", "$", "消費及印花"], ["settings", "⚙", "服務設定"], ["audit", "≡", "操作記錄"]
+    ["dashboard", "◫", "營運總覽"], ["appointments", "◷", "預約管理"], ["members", "◎", "會員管理"], ["sales", "$", "消費及印花"], ["settings", "⚙", "服務設定"], ["audit", "≡", "操作記錄"], ...(api.backendMode && !api.testingMode ? [["admins", "◎", "管理員管理"]] : [])
   ] : [
     ["dashboard", "⌂", "會員首頁"], ["book", "+", "立即預約"], ["appointments", "◷", "我的預約"], ["rewards", "✦", "電子印花"], ["profile", "◎", "會員資料"]
   ]).filter(([id]) => !admin || visibleViews(state.profile).includes(id));
@@ -119,6 +121,7 @@ function renderApp() {
 }
 
 function viewTitle() {
+  if(state.view==="admins")return "管理員管理";
   const map = { dashboard: "今日狀況", book: "預約服務", appointments: state.profile.role === "admin" ? "預約管理" : "我的預約", rewards: "電子印花", profile: "會員資料", members: "會員管理", "member-detail": "會員資料", sales: "消費及印花", settings: "服務設定", audit: "操作記錄" };
   return map[state.view] || "K.Hair Studio";
 }
@@ -201,6 +204,7 @@ function renderAdminView() {
   if (state.view === "sales") return renderSales();
   if (state.view === "settings") return renderSettings();
   if (state.view === "audit") return renderAuditLog();
+  if (state.view === "admins") return renderAdmins();
   return renderAdminDashboard();
 }
 
@@ -302,6 +306,28 @@ function renderSettings() {
   </div>`;
 }
 
+function renderAdmins() {
+  if(!api.backendMode || api.testingMode || !can(state.profile,"admins.manage"))return `<section class="card">你沒有此頁面權限。</section>`;
+  const active=state.adminAccounts.filter(a=>a.active),inactive=state.adminAccounts.filter(a=>!a.active);
+  return `<div class="grid"><section class="card"><div class="card-head"><h2>管理員帳戶</h2><button class="button" data-action="new-admin">＋ 新增管理員</button></div>
+    <p class="muted">只有 Howood 可以新增或刪減管理員。新帳戶為一般管理員，不可查看會員電話、營業額、服務設定或操作記錄。</p>
+    <div class="list">${active.map(a=>`<div class="list-item"><div class="list-item-main"><strong>${esc(a.name)}</strong><span>登入名稱：${esc(a.username)}</span></div><div class="list-item-side">${a.username==="howood" ? `<span class="badge active">主帳戶・不可刪除</span>` : `<button class="button ghost small" data-action="delete-admin" data-id="${esc(a.id)}">刪除管理員</button>`}</div></div>`).join("")}</div>
+    <p class="muted small">刪除會停用帳戶並撤銷登入，過往消費與操作紀錄保留；密碼不會在此顯示。</p></section>
+    ${inactive.length ? `<section class="card"><h2>已停用帳戶</h2><div class="list">${inactive.map(a=>`<div class="list-item"><strong>${esc(a.name)} · ${esc(a.username)}</strong><span>已停用</span></div>`).join("")}</div></section>` : ""}</div>`;
+}
+
+function adminModal() {
+  if(api.testingMode || !can(state.profile,"admins.manage"))return "";
+  const account=state.adminAccounts.find(a=>a.id===state.modal.adminId);
+  const deleting=state.modal.type==="admin-delete";
+  return `<div class="modal-backdrop"><section class="modal"><div class="modal-head"><h2>${deleting ? "刪除管理員" : "新增管理員"}</h2><button class="icon-button" data-action="close-modal">×</button></div>${deleting ? `
+    <p>確認停用 ${esc(account?.name)}（${esc(account?.username)}）？該帳戶將無法登入，過往操作紀錄不會刪除。</p><div class="actions"><button class="button ghost" data-action="close-modal">取消</button><button class="button danger" data-action="confirm-delete-admin" data-id="${esc(account?.id)}">確認停用</button></div>` : `
+    <form id="admin-form" class="form-grid"><label class="field span-2"><span>管理員名稱</span><input name="name" maxlength="80" required autocomplete="off"></label>
+    <label class="field span-2"><span>登入名稱</span><input name="username" pattern="[A-Za-z][A-Za-z0-9_\\x2d]{2,31}" minlength="3" maxlength="32" required autocapitalize="none" autocomplete="off"><small>3–32個英文字母、數字、_ 或 -；以英文字母開頭，不分大小寫。</small></label>
+    <label class="field span-2"><span>登入密碼（至少8個字元）</span><input name="password" type="password" minlength="8" maxlength="128" required autocomplete="new-password"></label>
+    <p class="muted small span-2">權限：一般管理員。密碼只會以安全雜湊儲存，請另行告知該管理員。</p><button class="button primary span-2" type="submit">建立管理員</button></form>`}</section></div>`;
+}
+
 function renderAuditLog() {
   if (!can(state.profile,"audit")) return `<section class="card">你沒有此頁面權限。</section>`;
   const items = state.data.auditLog || [];
@@ -312,6 +338,7 @@ function renderAuditLog() {
 }
 
 function renderModal() {
+  if (["admin-new","admin-delete"].includes(state.modal.type)) return adminModal();
   if (state.modal.type === "legacy-import") return legacyImportModal();
   if (state.modal.type === "reward-opening") return rewardOpeningModal();
   if (state.modal.type === "member") return memberModal();
@@ -424,7 +451,7 @@ function memberModal() {
       <label class="field span-2"><span>會員姓名</span><input name="name" required maxlength="80" autocomplete="off"></label>
       <label class="field"><span>香港電話</span><input name="phone" type="tel" inputmode="numeric" required maxlength="13" placeholder="9123 4567" autocomplete="off"></label>
       <label class="field"><span>入會日期</span><input name="joinedDate" type="date" required max="${localDate(new Date())}" value="${localDate(new Date())}"></label>
-      <div class="field"><span id="member-birthday-label">生日（選填，只需月日）</span><div class="birthday-fields" role="group" aria-labelledby="member-birthday-label"><select name="birthdayMonth" id="member-birthday-month" aria-label="生日月份"><option value="">月份</option>${Array.from({length:12},(_,i)=>`<option value="${i+1}">${i+1}月</option>`).join("")}</select><select name="birthdayDay" id="member-birthday-day" aria-label="生日日期" disabled>${birthdayDayOptions("")}</select></div></div>
+      <div class="field"><span id="member-birthday-label">生日（選填，可只填月份）</span><div class="birthday-fields" role="group" aria-labelledby="member-birthday-label"><select name="birthdayMonth" id="member-birthday-month" aria-label="生日月份"><option value="">月份</option>${Array.from({length:12},(_,i)=>`<option value="${i+1}">${i+1}月</option>`).join("")}</select><select name="birthdayDay" id="member-birthday-day" aria-label="生日日期（選填）" disabled>${birthdayDayOptions("")}</select></div><small>日期可留空，無需出生年份。</small></div>
       <label class="field span-2"><span>電郵（選填）</span><input name="email" type="email" autocomplete="off" placeholder="沒有可留空"></label>
       ${memberPhoneLookup({ name: "referrerId", inputId: "referrer-member-phone", label: "介紹人（選填，以電話搜尋）" })}
       <p class="muted small span-2">生日無需填出生年份。請核對實際入會日期；年資及印花年度按此日期計算。會員不會獲得登入帳戶。</p>
@@ -434,7 +461,7 @@ function memberModal() {
 }
 
 function birthdayDayOptions(month, selected = "") {
-  return `<option value="">日期</option>${Array.from({length:birthdayDaysInMonth(month)},(_,i)=>`<option value="${i+1}" ${Number(selected)===i+1?"selected":""}>${i+1}日</option>`).join("")}`;
+  return `<option value="">日期（選填）</option>${Array.from({length:birthdayDaysInMonth(month)},(_,i)=>`<option value="${i+1}" ${Number(selected)===i+1?"selected":""}>${i+1}日</option>`).join("")}`;
 }
 
 function saleModal() {
@@ -586,6 +613,7 @@ function stampLedgerList(items, admin = false) {
 }
 
 function bindForms() {
+  root.querySelector("#admin-form")?.addEventListener("submit",onAdminAccount);
   root.querySelector("#legacy-import-form")?.addEventListener("submit",onLegacyImport);
   root.querySelector("#reward-opening-form")?.addEventListener("submit",onRewardOpening);
   root.querySelector("#login-form")?.addEventListener("submit", onLogin);
@@ -635,6 +663,13 @@ root.addEventListener("click", async event => {
   if (!target) return;
   const { action } = target.dataset;
   try {
+    if(["new-admin","delete-admin","confirm-delete-admin"].includes(action)){
+      if(!api.backendMode || api.testingMode || !can(state.profile,"admins.manage"))throw new Error("你沒有此操作權限。");
+      if(action==="confirm-delete-admin"){
+        await busy(target,async()=>{await api.disableAdmin(target.dataset.id);state.modal=null;toast("管理員已停用，過往紀錄保留。");await refresh();});return;
+      }
+      state.modal={type:action==="new-admin"?"admin-new":"admin-delete",adminId:target.dataset.id};render();return;
+    }
     if(action==="import-local-data"){if(api.testingMode || !api.backendMode || !can(state.profile,"migration"))throw new Error("測試版不可匯入真實資料，或你沒有此操作權限。");state.modal={type:"legacy-import"};render();return;}
     if(action==="backup-local-data"){await backupLocalData();return;}
     if(action==="review-rewards"){if(!api.backendMode || !can(state.profile,"members.joined-date"))throw new Error("你沒有此操作權限。");state.modal={type:"reward-opening",memberId:target.dataset.member};render();return;}
@@ -720,6 +755,15 @@ async function onLogin(event) {
     }
     state.view="dashboard";
     await refresh();
+  });
+}
+
+async function onAdminAccount(event){
+  event.preventDefault();
+  const input=Object.fromEntries(new FormData(event.currentTarget));
+  await busy(event.submitter,async()=>{
+    if(!api.backendMode || api.testingMode || !can(state.profile,"admins.manage"))throw new Error("你沒有此操作權限。");
+    await api.createAdmin(input);state.modal=null;toast("管理員已建立，可使用新帳戶登入。");await refresh();
   });
 }
 

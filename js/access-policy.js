@@ -1,20 +1,22 @@
 // Account names are not credentials. Only a verified server session may supply
 // the principal used by the API. Frontend checks are display helpers only.
 export const ACCOUNT_NAMES = Object.freeze(["howood", "sally", "admin135", "admin268", "admin567", "admin889", "admin233"]);
+// Initial accounts only; active accounts are now verified against the database.
+export const validAccountName = name => /^[a-z][a-z0-9_-]{2,31}$/.test(name);
 const OWNERS = new Set(["howood", "sally"]);
 const COMMON = new Set(["dashboard", "members", "appointments", "sales", "catalog.read", "members.create", "appointments.write", "sales.create"]);
 const OWNER_ONLY = new Set(["settings", "audit", "export", "revenue", "catalog.write", "team.write", "stamps.adjust", "members.joined-date", "migration"]);
 
 export function accountName(principal) {
   const name = String(principal?.username || "").toLowerCase();
-  return principal?.role === "admin" && principal.active === true && ACCOUNT_NAMES.includes(name) ? name : null;
+  return principal?.role === "admin" && principal.active === true && validAccountName(name) ? name : null;
 }
 
 export function can(principal, action) {
   const name = accountName(principal);
   if (!name) return false;
   if (action === "phone.search") return true;
-  if (action === "phone.read" || action === "migration") return name === "howood";
+  if (action === "phone.read" || action === "migration" || action === "admins" || action === "admins.manage") return name === "howood";
   return COMMON.has(action) || OWNER_ONLY.has(action) && OWNERS.has(name);
 }
 
@@ -27,7 +29,7 @@ export function requirePermission(principal, action) {
 }
 
 export function visibleViews(principal) {
-  return ["dashboard", "appointments", "members", "sales", "settings", "audit"].filter(view => can(principal, view));
+  return ["dashboard", "appointments", "members", "sales", "settings", "audit", "admins"].filter(view => can(principal, view));
 }
 
 export function homeSections(principal) {

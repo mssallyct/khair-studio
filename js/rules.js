@@ -98,8 +98,11 @@ export function birthdayDaysInMonth(month) {
 }
 
 function birthdayParts(value) {
-  // Accept existing full dates without rewriting them; new birthdays use MM-DD.
-  const match = /^(?:\d{4}-)?(\d{2})-(\d{2})$/.exec(String(value || "").trim());
+  // MM means a known month with an unknown day; never invent the first day.
+  // Existing MM-DD and YYYY-MM-DD values remain supported.
+  const text = String(value || "").trim();
+  if (/^(0[1-9]|1[0-2])$/.test(text)) return {month:Number(text),day:null};
+  const match = /^(?:\d{4}-)?(\d{2})-(\d{2})$/.exec(text);
   if (!match) return null;
   const month = Number(match[1]);
   const day = Number(match[2]);
@@ -109,21 +112,21 @@ function birthdayParts(value) {
 export function normalizeBirthday(value) {
   if (value == null || String(value).trim() === "") return null;
   const parts = birthdayParts(value);
-  if (!parts) throw new Error("請選擇有效的生日月份及日期。");
-  return `${String(parts.month).padStart(2, "0")}-${String(parts.day).padStart(2, "0")}`;
+  if (!parts) throw new Error("請選擇有效的生日月份；日期可留空。");
+  return `${String(parts.month).padStart(2, "0")}${parts.day===null ? "" : `-${String(parts.day).padStart(2, "0")}`}`;
 }
 
 export function birthdayFromParts(month, day) {
   const m = String(month ?? "").trim();
   const d = String(day ?? "").trim();
   if (!m && !d) return null;
-  if (!/^\d{1,2}$/.test(m) || !/^\d{1,2}$/.test(d)) throw new Error("請同時選擇生日月份及日期，或兩項都留空。");
-  return normalizeBirthday(`${m.padStart(2, "0")}-${d.padStart(2, "0")}`);
+  if (!/^\d{1,2}$/.test(m) || d && !/^\d{1,2}$/.test(d)) throw new Error("請先選擇生日月份；日期可留空。");
+  return normalizeBirthday(`${m.padStart(2, "0")}${d ? `-${d.padStart(2, "0")}` : ""}`);
 }
 
 export function formatBirthday(value) {
   const parts = birthdayParts(value);
-  return parts ? `${parts.month}月${parts.day}日` : "未記錄";
+  return parts ? `${parts.month}月${parts.day===null ? "" : `${parts.day}日`}` : "未記錄";
 }
 
 export function membershipInfo(profile, asOf = new Date()) {

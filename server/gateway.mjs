@@ -6,6 +6,7 @@ import { summarizeRevenue } from "../js/revenue.js";
 import { DemoStore } from "../js/demo-store.js";
 import { findMembersByPhone } from "../js/member-search.js";
 import { prepareLegacyImport, reviewedOpening } from "./migration.mjs";
+import { newAdmin } from "./admin-management.mjs";
 
 // Adapter contract: authenticate verifies a server-side session, never request
 // role/username headers. transaction locks the data, commits atomically on success
@@ -34,6 +35,33 @@ export function createGateway({ repository, authenticate, auth, allowedOrigins =
       const principal = await authenticate(request);
       if (!accountName(principal)) throw failure(401,"請先登入獲授權的管理員帳戶。");
       const now = clock();
+      if(path==="/admins" && (request.method==="GET" || readPost)){
+        requirePermission(principal,"admins.manage");
+        const rows=await repository.listAdmins();
+        return reply(200,rows.map(({id,username,name,active,created_at})=>({id,username,name,active,created_at})),headers);
+      }
+      if(["/admins/create","/admins/disable"].includes(path) && request.method==="POST"){
+        requirePermission(principal,"admins.manage");
+        const raw=await request.text();if(Buffer.byteLength(raw)>4096)throw failure(413,"請求內容過大。");
+        let input;try{input=JSON.parse(raw);}catch{throw failure(400,"請求格式錯誤。");}
+        if(!input || Array.isArray(input) || typeof input!=="object")throw failure(400,"請求格式錯誤。");
+        const account=path==="/admins/create" ? await newAdmin(input) : null;
+        if(!account && (typeof input.id!=="string" || input.id.length>100 || input.id===principal.id))throw failure(400,"不能刪除自己的 Howood 帳戶。");
+        const result=await repository.transaction(async(data,client)=>{
+          let row;
+          if(account){
+            await repository.insertAdmin(client,account);
+            row={id:account.id,username:account.username,name:account.name,role:"admin",active:true};
+            data.profiles.push(row);
+          }else{
+            row=await repository.disableAdmin(client,input.id);
+            const profile=data.profiles.find(p=>p.id===row.id);if(profile)profile.active=false;
+          }
+          audit(data,principal,account?"admin.created":"admin.disabled",row.id,`${account?"新增管理員":"刪除／停用管理員"}：${row.username}（${row.name}）`,now.toISOString());
+          return {id:row.id};
+        });
+        return reply(200,result,headers);
+      }
       if(path==='/members/search' && request.method==='POST'){
         requirePermission(principal,'phone.search');
         const raw=await request.text();if(raw.length>512)throw failure(413,'搜尋內容過長。');

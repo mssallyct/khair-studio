@@ -36,6 +36,9 @@ export class BackendApi {
     return result;
   }
   async getCatalog(){return this.request("/catalog");}
+  async listAdmins(){return this.request("/admins");}
+  async createAdmin(input){return this.request("/admins/create",{method:"POST",body:input});}
+  async disableAdmin(id){return this.request("/admins/disable",{method:"POST",body:{id}});}
   async searchMembers(query){return this.request('/members/search',{method:'POST',body:{query}});}
   async createMember(input){return this.request("/members",{method:"POST",body:input});}
   async updateMemberJoinedDate(memberId,joinedDate){return this.request("/members/joined-date",{method:"POST",body:{memberId,joinedDate}});}

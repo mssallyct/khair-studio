@@ -19,6 +19,18 @@ function harness(username="howood"){
   return {call,data:()=>data,counts:()=>({reads,writes}),replace:value=>data=value};
 }
 
+test('backend stores month-only and full birthdays without inventing or rewriting old dates',async()=>{
+  const h=harness(),before=JSON.stringify(h.data().profiles[0]);
+  for(const [birthday,phone] of [['11','21234567'],['02-29','21234568'],[null,'21234569']]){
+    const response=await h.call('/members',{name:'月份測試',phone,birthday,joinedDate:'2026-11-01'});
+    assert.equal(response.status,200);assert.equal(h.data().profiles.at(-1).birthday,birthday);
+  }
+  assert.equal(JSON.stringify(h.data().profiles[0]),before);
+  const count=h.data().profiles.length;
+  assert.equal((await h.call('/members',{name:'invalid',phone:'21234560',birthday:'13',joinedDate:'2026-11-01'})).status,400);
+  assert.equal(h.data().profiles.length,count);
+});
+
 test('所有管理員可按電話搜尋，只有Howood的結果包含電話；搜尋不更改資料',async()=>{
   for(const name of ['howood','sally','admin135','admin268','admin567','admin889','admin233']){
     const h=harness(name),before=JSON.stringify(h.data());

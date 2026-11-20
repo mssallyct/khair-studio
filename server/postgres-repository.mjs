@@ -11,13 +11,24 @@ export class PostgresRepository {
       await client.query("BEGIN");
       const r=await client.query("SELECT document FROM khair_private.business_state WHERE singleton = true FOR UPDATE");
       if(!r.rows[0])throw new Error("資料庫尚未初始化。");
-      const data=structuredClone(r.rows[0].document),result=await fn(data);
+      const data=structuredClone(r.rows[0].document),result=await fn(data,client);
       await client.query("UPDATE khair_private.business_state SET document = $1::jsonb, revision = revision + 1, updated_at = now() WHERE singleton = true",[JSON.stringify(data)]);
       await client.query("COMMIT");return result;
     }catch(error){await client.query("ROLLBACK").catch(()=>{});throw error;}finally{client.release();}
   }
   async accountByUsername(name){return (await this.pool.query("SELECT id, username, name, password_hash, active FROM khair_private.admin_accounts WHERE username = $1",[name])).rows[0] || null;}
   async accountById(id){return (await this.pool.query("SELECT id, username, name, active FROM khair_private.admin_accounts WHERE id = $1",[id])).rows[0] || null;}
+  async listAdmins(){return (await this.pool.query("SELECT id, username, name, active, created_at FROM khair_private.admin_accounts ORDER BY active DESC, username")).rows;}
+  async insertAdmin(client,account){
+    const result=await client.query("INSERT INTO khair_private.admin_accounts(id,username,name,password_hash) VALUES ($1,$2,$3,$4) ON CONFLICT (username) DO NOTHING RETURNING id",[account.id,account.username,account.name,account.passwordHash]);
+    if(!result.rows.length){const error=new Error("此登入名稱已使用，包括已停用帳戶；請使用另一名稱。");error.status=409;throw error;}
+  }
+  async disableAdmin(client,id){
+    const result=await client.query("UPDATE khair_private.admin_accounts SET active=false WHERE id=$1 AND username <> 'howood' RETURNING id,username,name,active",[id]);
+    if(!result.rows.length){const error=new Error("找不到可刪除的管理員；Howood 帳戶不可刪除。");error.status=400;throw error;}
+    await client.query("DELETE FROM khair_private.sessions WHERE account_id=$1",[id]);
+    return result.rows[0];
+  }
   async putSession({tokenHash,accountId,expiresAt}){await this.pool.query("INSERT INTO khair_private.sessions(token_hash, account_id, expires_at) VALUES ($1,$2,$3)",[tokenHash,accountId,expiresAt]);}
   async sessionByHash(hash){return (await this.pool.query("SELECT account_id, expires_at, revoked_at FROM khair_private.sessions WHERE token_hash = $1",[hash])).rows[0] || null;}
   async removeSession(hash){await this.pool.query("DELETE FROM khair_private.sessions WHERE token_hash = $1",[hash]);}

@@ -29,6 +29,7 @@ export async function createTestingApi({storage=globalThis.localStorage,clock=()
   const gateway=createGateway({repository,clock,authenticate:async()=>principal});
   const api=new BackendApi({backendUrl:'https://sandbox.invalid/api'});api.testingMode=true;
   api.request=async(path,{method='GET',body}={})=>{
+    if(path.startsWith('/admins'))throw new Error('測試版不可管理正式帳戶。');
     if(path.startsWith('/migration'))throw new Error('測試版禁止匯入真實資料。');
     const response=await gateway(new Request(`https://sandbox.invalid/api${path}`,{method,headers:{'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{})}));
     const result=await response.json();if(!response.ok)throw new Error(result.error);return result;

@@ -6,7 +6,7 @@ create schema if not exists khair_private;
 revoke all on schema khair_private from public;
 create table if not exists khair_private.admin_accounts (
   id text primary key,
-  username text not null unique check (username in ('howood','sally','admin135','admin268','admin567','admin889','admin233')),
+  username text not null unique constraint admin_accounts_username_format_check check (username ~ '^[a-z][a-z0-9_-]{2,31}$'),
   name text not null,
   password_hash text not null check (password_hash like 'scrypt$%'),
   active boolean not null default true,

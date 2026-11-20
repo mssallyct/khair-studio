@@ -16,6 +16,8 @@ for(const name of ['howood','sally','Admin135','Admin268','Admin567','Admin889',
   await api.signOut();
 }
 await api.signIn('howood');
+await assert.rejects(api.listAdmins(),/不可管理正式帳戶/);
+await assert.rejects(api.createAdmin({username:'testonly'}),/不可管理正式帳戶/);
 for(const [memberId,kind] of [['test-member-0','hair10'],['test-member-1','stamp4'],['test-member-2','stamp8']]){
   const d=await api.getAdminDashboard(),catalog=d.catalog.find(c=>kind==='hair10'?c.name==='洗剪吹':c.kind==='service'&&Number(c.price)===650);
   assert.ok(catalog);const requestId=`sandbox-transaction-${kind}`,items=[{catalogId:catalog.id,name:catalog.name,kind:catalog.kind,reward_group:catalog.reward_group,unitPrice:catalog.price,quantity:1}];

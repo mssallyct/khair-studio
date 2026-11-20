@@ -12,10 +12,24 @@ test("生日只需月日，兼容舊生日但不顯示出生年份", () => {
   assert.equal(formatBirthday(null), "未記錄");
   assert.equal(birthdayDaysInMonth(2), 29);
   assert.equal(birthdayDaysInMonth(4), 30);
-  for (const [month, day] of [["2", "30"], ["4", "31"], ["13", "1"], ["0", "1"], ["1", "0"], ["11", ""], ["", "10"]]) {
+  for (const [month, day] of [["2", "30"], ["4", "31"], ["13", "1"], ["0", "1"], ["1", "0"], ["", "10"], ["0", ""], ["13", ""]]) {
     assert.throws(() => birthdayFromParts(month, day), /生日/);
   }
   assert.throws(() => normalizeBirthday("02-30"), /生日/);
+});
+
+test("只填月份保留未知日子，不補1日；生日獎賞仍每年一次",()=>{
+  for(let month=1;month<=12;month++){
+    const value=String(month).padStart(2,"0");
+    assert.equal(birthdayFromParts(String(month),""),value);
+    assert.equal(normalizeBirthday(value),value);
+    assert.equal(formatBirthday(value),`${month}月`);
+    const now=new Date(`2026-${value}-15T04:00:00Z`),profile={id:"month-member",birthday:value};
+    assert.equal(birthdayStampAward(profile,[],now),1);
+    assert.equal(birthdayStampAward(profile,[{member_id:profile.id,type:"birthday",created_at:now.toISOString()}],now),0);
+  }
+  assert.equal(isBirthdayMonth("12",new Date("2026-11-01T04:00:00Z")),false);
+  for(const value of ["00","13","02-00","2026-02"])assert.throws(()=>normalizeBirthday(value),/生日/);
 });
 
 test("只填月日仍按香港生日月份發一次獎賞，兼容舊格式", () => {

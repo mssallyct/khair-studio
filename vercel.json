@@ -1,5 +1,5 @@
 {
-  "buildCommand": "npm run check && node scripts/provision-production.mjs",
+  "buildCommand": "npm run check && node scripts/provision-production.mjs && node scripts/migrate-admin-policy.mjs",
   "outputDirectory": "dist",
   "rewrites": [
     { "source": "/api/:path*", "destination": "/api" }

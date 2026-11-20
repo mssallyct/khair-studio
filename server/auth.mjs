@@ -1,4 +1,4 @@
-import { ACCOUNT_NAMES } from "../js/access-policy.js";
+import { validAccountName } from "../js/access-policy.js";
 import { hashPassword, verifyPassword, newSessionToken, tokenDigest } from "./credentials.mjs";
 
 // repository must persist accounts, rate limits and sessions centrally.
@@ -7,9 +7,9 @@ export function createAuth({repository,clock=()=>new Date(),peer=()=>"unknown"})
   return {
     async login(request,input) {
       const username=String(input?.username || "").trim().toLowerCase();
-      const allowed=await repository.attemptLogin(ACCOUNT_NAMES.includes(username)?username:"__unknown__",peer(request),clock());
+      const allowed=await repository.attemptLogin(validAccountName(username)?username:"__unknown__",peer(request),clock());
       if(!allowed)throw authError(429,"登入嘗試過多，請稍後再試。");
-      const account=ACCOUNT_NAMES.includes(username) ? await repository.accountByUsername(username) : null;
+      const account=validAccountName(username) ? await repository.accountByUsername(username) : null;
       const valid=await verifyPassword(String(input?.password || ""),account?.password_hash || await dummy);
       if(!valid || !account?.active)throw authError(401,"登入名稱或密碼不正確。");
       const token=newSessionToken(),expiresAt=new Date(clock().getTime()+8*3600000).toISOString();
@@ -21,7 +21,7 @@ export function createAuth({repository,clock=()=>new Date(),peer=()=>"unknown"})
       const session=await repository.sessionByHash(tokenDigest(token));
       if(!session || session.revoked_at || new Date(session.expires_at).getTime()<=clock().getTime())return null;
       const account=await repository.accountById(session.account_id);
-      return account?.active && ACCOUNT_NAMES.includes(account.username) ? profile(account) : null;
+      return account?.active && validAccountName(account.username) ? profile(account) : null;
     },
     async logout(request) { const token=bearer(request);if(token)await repository.removeSession(tokenDigest(token)); }
   };

@@ -207,7 +207,7 @@ test("會員名單及詳情顯示入會年份和自動年資，舊生日不顯�
   assert.match(runInContext("renderMemberDetail()", context), /入會年份<\/span><strong>未記錄/);
 });
 
-test("新增會員提交會把月日轉成無年份生日，未選完整日期不會建立會員", async () => {
+test("新增會員提交支援月日或只填月份，不可只填日子", async () => {
   const context = renderContext();
   runInContext(`
     let submittedMember = null;
@@ -225,8 +225,28 @@ test("新增會員提交會把月日轉成無年份生日，未選完整日期�
   assert.equal(runInContext("submittedMember.birthday", context), "02-29");
   assert.equal(runInContext("submittedMember.adminId", context), "admin-test");
   runInContext('memberFields = [["name","測試會員"],["phone","21234568"],["birthdayMonth","2"]];', context);
-  await assert.rejects(() => runInContext("onMember(submitEvent)", context), /同時選擇生日/);
-  assert.equal(runInContext("submittedCount", context), 1);
+  await runInContext("onMember(submitEvent)",context);
+  assert.equal(runInContext("submittedMember.birthday",context),"02");
+  runInContext('memberFields = [["name","測試會員"],["phone","21234568"],["birthdayDay","2"]];',context);
+  await assert.rejects(() => runInContext("onMember(submitEvent)", context), /生日月份/);
+  assert.equal(runInContext("submittedCount", context), 2);
+});
+
+test("只有Howood有管理員頁及新增入口，刪除有確認而主帳戶不可刪",()=>{
+  const context=renderContext();
+  runInContext('api.backendMode=true;state.adminAccounts=[{id:"admin-howood",username:"howood",name:"Howood",active:true},{id:"new",username:"staffnew",name:"新管理員",active:true},{id:"old",username:"staffold",name:"舊管理員",active:false}];state.modal=null;',context);
+  assert.match(runInContext('renderApp()',context),/data-view="admins"/);
+  const html=runInContext('renderAdmins()',context);
+  assert.match(html,/data-action="new-admin"/);assert.match(html,/主帳戶・不可刪除/);
+  assert.doesNotMatch(html,/data-action="delete-admin" data-id="admin-howood"/);
+  assert.match(html,/已停用帳戶/);
+  runInContext('state.modal={type:"admin-delete",adminId:"new"};',context);
+  assert.match(runInContext('adminModal()',context),/確認停用|過往操作紀錄不會刪除/);
+  for(const name of ['sally','admin135','staffnew']){
+    context.username=name;runInContext('state.profile.username=username;state.modal=null;',context);
+    assert.doesNotMatch(runInContext('renderApp()',context),/data-view="admins"/);
+    assert.match(runInContext('renderAdmins()',context),/沒有此頁面權限/);
+  }
 });
 
 test("項目選單只有30個新服務；舊預約結帳必須重新選擇，歷史資料不改", () => {
