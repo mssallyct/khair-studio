@@ -1,4 +1,7 @@
 {
   "buildCommand": "npm run check && node scripts/provision-production.mjs",
-  "outputDirectory": "dist"
+  "outputDirectory": "dist",
+  "rewrites": [
+    { "source": "/api/:path*", "destination": "/api" }
+  ]
 }
