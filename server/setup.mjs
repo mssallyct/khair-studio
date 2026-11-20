@@ -1,11 +1,13 @@
 import { ACCOUNT_NAMES } from "../js/access-policy.js";
 import { buildServiceCatalog } from "../js/service-catalog.js";
+import { buildProductCatalog, PRODUCT_REVISION } from "../js/product-catalog.js";
 import { hashPassword } from "./credentials.mjs";
 
 // Trusted setup only; not exposed through the web gateway. Passwords enter via a
 // secure server-side provisioning process, never command arguments/source files.
 export async function initializeBusinessState(pool) {
-  const data={profiles:[],appointments:[],sales:[],saleItems:[],stampLedger:[],referrals:[],auditLog:[],stylists:[],assistants:[],catalog:buildServiceCatalog([], {createdAt:new Date().toISOString()}),rewardWallets:{},checkoutRequests:{}};
+  const at=new Date().toISOString();
+  const data={profiles:[],appointments:[],sales:[],saleItems:[],stampLedger:[],referrals:[],auditLog:[],stylists:[],assistants:[],catalog:[...buildServiceCatalog([], {createdAt:at}),...buildProductCatalog('system-setup',at)],catalogUpdates:{[PRODUCT_REVISION]:{applied_at:at,applied_by:'system-setup',added_count:21,archived_count:0}},rewardWallets:{},checkoutRequests:{}};
   return pool.query("INSERT INTO khair_private.business_state(singleton,document) VALUES (true,$1::jsonb) ON CONFLICT (singleton) DO NOTHING",[JSON.stringify(data)]);
 }
 export async function provisionAdmin(pool,{username,password}) {

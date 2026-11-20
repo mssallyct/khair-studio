@@ -12,12 +12,13 @@ export function databaseOptions(value,ca) {
 
 let runtimePromise;
 export async function configuredGateway(env=process.env) {
-  if(env.KHAIR_BACKEND_ENABLED!=="true" || !env.DATABASE_URL || !env.KHAIR_ALLOWED_ORIGINS)return createGateway();
+  const databaseUrl=env.DATABASE_URL || env.POSTGRES_URL;
+  if(env.KHAIR_BACKEND_ENABLED!=="true" || !databaseUrl || !env.KHAIR_ALLOWED_ORIGINS)return createGateway();
   if(!runtimePromise)runtimePromise=(async()=>{
     const origins=env.KHAIR_ALLOWED_ORIGINS.split(",").map(s=>s.trim());
     if(origins.some(origin=>new URL(origin).protocol!=="https:" || new URL(origin).origin!==origin))throw new Error("請設定完整HTTPS前端來源，不能使用萬用字元。");
     const {Pool}=await import("pg");
-    const repository=new PostgresRepository(new Pool(databaseOptions(env.DATABASE_URL,env.DATABASE_SSL_CA)));
+    const repository=new PostgresRepository(new Pool(databaseOptions(databaseUrl,env.DATABASE_SSL_CA)));
     const auth=createAuth({repository});
     return createGateway({repository,auth,allowedOrigins:origins});
   })().catch(error=>{runtimePromise=null;throw error;});

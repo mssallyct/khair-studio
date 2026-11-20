@@ -1,4 +1,4 @@
 {
-  "buildCommand": "npm run check",
+  "buildCommand": "npm run check && node scripts/provision-production.mjs",
   "outputDirectory": "dist"
 }
