@@ -7,6 +7,8 @@ import { DemoStore } from "../js/demo-store.js";
 import { findMembersByPhone } from "../js/member-search.js";
 import { prepareLegacyImport, reviewedOpening } from "./migration.mjs";
 import { newAdmin } from "./admin-management.mjs";
+import { normalizeRemarks } from "../js/member-remarks.js";
+import { importMemberRows } from "./member-import.mjs";
 
 // Adapter contract: authenticate verifies a server-side session, never request
 // role/username headers. transaction locks the data, commits atomically on success
@@ -106,7 +108,7 @@ export function createGateway({ repository, authenticate, auth, allowedOrigins =
       }
       if (request.method !== "POST") throw failure(405,"不支援此操作。");
       const actionName=path.startsWith("/actions/") ? path.slice(9) : null;
-      const permission = ({"/members":"members.create","/members/joined-date":"members.joined-date","/members/rewards/opening":"members.joined-date","/migration/import":"migration","/sales":"sales.create"})[path] || ACTIONS[actionName];
+      const permission = ({"/members":"members.create","/members/import":"migration","/members/remarks":"members.remarks","/members/joined-date":"members.joined-date","/members/rewards/opening":"members.joined-date","/migration/import":"migration","/sales":"sales.create"})[path] || ACTIONS[actionName];
       if (!permission) throw failure(404,"找不到此功能。");
       requirePermission(principal,permission);
       const raw = await request.text();
@@ -116,6 +118,24 @@ export function createGateway({ repository, authenticate, auth, allowedOrigins =
       const result = await repository.transaction(async data => {
         try {
         const timestamp = now.toISOString();
+        if(path==="/members/import")return importMemberRows(data,body,principal,now);
+        if(path==="/members/remarks"){
+          const member=data.profiles.find(p=>p.id===body.memberId && p.role==="member");
+          if(!member)throw failure(404,"找不到會員。");
+          const version=member.remarks_version || 0;
+          if(body.expectedVersion!==version)throw failure(409,"備註剛有更新，請重新整理後再操作。");
+          const remarks=normalizeRemarks(member.remarks);
+          if(body.operation==="append"){
+            const added=normalizeRemarks(body.remarks);if(!added.length)throw failure(400,"請填寫備註。");
+            member.remarks=normalizeRemarks([...remarks,...added]);
+          }else if(body.operation==="delete"){
+            if(!Number.isInteger(body.index) || body.index<0 || body.index>=remarks.length)throw failure(400,"找不到指定備註。");
+            remarks.splice(body.index,1);member.remarks=remarks;
+          }else throw failure(400,"不支援此備註操作。");
+          member.remarks_version=version+1;
+          audit(data,principal,body.operation==="append"?"member.remark_added":"member.remark_deleted",member.id,`${body.operation==="append"?"新增":"刪除"}備註（餘下${member.remarks.length}點）`,timestamp);
+          return {id:member.id};
+        }
         if(path==="/migration/import"){
           if(body.confirmed!==true)throw failure(400,"請先備份及確認匯入來源。");
           const imported=prepareLegacyImport(data,body.snapshot,principal,now);
@@ -155,7 +175,7 @@ export function createGateway({ repository, authenticate, auth, allowedOrigins =
           if (!name || name.length>80) throw failure(400,"請填寫有效會員姓名。");
           const phone = normalizeHongKongPhone(body.phone), birthday = normalizeBirthday(body.birthday);
           if (data.profiles.some(p=>String(p.phone || "").replace(/\D/g,"")===phone.replace(/\D/g,""))) throw failure(409,"會員資料已登記。");
-          const member = {id:`member-${randomUUID()}`,name,phone,birthday,email:String(body.email||"").trim(),joined_date:joined,role:"member",active:true,created_at:timestamp,created_by:principal.id};
+          const member = {id:`member-${randomUUID()}`,name,phone,birthday,email:String(body.email||"").trim(),remarks:normalizeRemarks(body.remarks),joined_date:joined,role:"member",active:true,created_at:timestamp,created_by:principal.id};
           data.profiles.push(member);
           (data.rewardWallets ||= {})[member.id] = createRewardWallet(member,now);
           if(body.referrerId){

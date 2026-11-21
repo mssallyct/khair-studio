@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createContext, runInContext } from "node:vm";
 import * as rules from "../js/rules.js";
+import { normalizeRemarks } from "../js/member-remarks.js";
 import { summarizeRevenue } from "../js/revenue.js";
 import { buildMemberDetail } from "../js/member-detail.js";
 import { buildServiceCatalog } from "../js/service-catalog.js";
@@ -16,12 +17,25 @@ import { webcrypto } from "node:crypto";
 const source = readFileSync(new URL("../js/app.js",import.meta.url),"utf8").replace(/^import .*;\n/gm,"").replace("boot();","");
 function renderContext() {
   const root = {addEventListener() {}};
-  const context = createContext({...rules,...access,...rewardViews,quoteRewards,rewardStatus,crypto:webcrypto,structuredClone,summarizeRevenue,buildMemberDetail,document:{querySelector:()=>root}});
+  const context = createContext({...rules,...access,...rewardViews,normalizeRemarks,quoteRewards,rewardStatus,crypto:webcrypto,structuredClone,summarizeRevenue,buildMemberDetail,document:{querySelector:()=>root}});
   runInContext(source,context);
   runInContext('state.profile={id:"admin-howood",username:"howood",name:"Howood",role:"admin",active:true};',context);
   runInContext(`api={demoMode:true}; state.data={profiles:[{id:"member-1",name:"測試會員",role:"member"}],appointments:[],sales:[],catalog:[{id:"svc",kind:"service",name:"護理",price:600,active:true}],stylists:[{id:"sty-a",name:"髮型師",active:true}],assistants:[],stamps:[{member_id:"member-1",delta:3}]}; state.modal={type:"sale",memberId:"member-1",redemption:4}; state.saleItems=[{catalogId:"svc",kind:"service",name:"護理",quantity:1,unitPrice:600}];`,context);
   return context;
 }
+
+test('備註在會員底部，逐點顯示、轉義及可新增／確認刪除',()=>{
+  const context=renderContext();
+  runInContext('api.backendMode=true;state.selectedMemberId="member-1";state.data.profiles[0].remarks=["第一點 <script>alert(1)</script>","第二點"];',context);
+  const html=runInContext('renderMemberDetail()',context);
+  assert.match(html,/備註 Remark/);assert.match(html,/data-action="edit-member-remarks"/);assert.equal((html.match(/data-action="delete-member-remark"/g)||[]).length,2);
+  assert.match(html,/&lt;script&gt;/);assert.doesNotMatch(html,/<script>/);assert.ok(html.indexOf('member-remarks')>html.indexOf('member-profile-hero'));
+  runInContext('state.modal={type:"member-remark-delete",memberId:"member-1",index:1,version:0};',context);
+  const confirm=runInContext('memberRemarksModal()',context);assert.match(confirm,/確認刪除/);assert.match(confirm,/第二點/);assert.doesNotMatch(confirm,/第一點/);
+  runInContext('state.data.profiles[0].remarks=[];state.data.profiles[0].import_opening={stamps:null,hairVisits:null};state.data.profiles[0].joined_date=null;',context);
+  assert.equal(runInContext('memberBalance("member-1")',context),'');
+  assert.doesNotMatch(runInContext('renderMemberDetail()',context),/<ul class="remark-list">/);
+});
 
 test('會員詳情最頂先顯示Member Profile，再顯示優惠進度或待核對資訊',()=>{
   const context=renderContext();

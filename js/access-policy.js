@@ -1,10 +1,11 @@
 // Account names are not credentials. Only a verified server session may supply
 // the principal used by the API. Frontend checks are display helpers only.
+import { normalizeRemarks } from "./member-remarks.js";
 export const ACCOUNT_NAMES = Object.freeze(["howood", "sally", "admin135", "admin268", "admin567", "admin889", "admin233"]);
 // Initial accounts only; active accounts are now verified against the database.
 export const validAccountName = name => /^[a-z][a-z0-9_-]{2,31}$/.test(name);
 const OWNERS = new Set(["howood", "sally"]);
-const COMMON = new Set(["dashboard", "members", "appointments", "sales", "catalog.read", "members.create", "appointments.write", "sales.create"]);
+const COMMON = new Set(["dashboard", "members", "appointments", "sales", "catalog.read", "members.create", "members.remarks", "appointments.write", "sales.create"]);
 const OWNER_ONLY = new Set(["settings", "audit", "export", "revenue", "catalog.write", "team.write", "stamps.adjust", "members.joined-date", "migration"]);
 
 export function accountName(principal) {
@@ -16,7 +17,7 @@ export function can(principal, action) {
   const name = accountName(principal);
   if (!name) return false;
   if (action === "phone.search") return true;
-  if (action === "phone.read" || action === "migration" || action === "admins" || action === "admins.manage") return name === "howood";
+  if (["phone.read","migration","admins","admins.manage"].includes(action)) return name === "howood";
   return COMMON.has(action) || OWNER_ONLY.has(action) && OWNERS.has(name);
 }
 
@@ -37,11 +38,11 @@ export function homeSections(principal) {
   return can(principal, "revenue") ? ["revenue", "pending", "today", "expiry"] : ["pending", "today"];
 }
 
-const MEMBER_FIELDS = ["id", "role", "active", "name", "email", "birthday", "referral_code", "joined_date", "created_at", "created_by"];
+const MEMBER_FIELDS = ["id", "role", "active", "name", "email", "birthday", "referral_code", "joined_date", "created_at", "created_by", "remarks", "remarks_version", "import_opening", "import_source"];
 export function memberFor(principal, member) {
   requirePermission(principal, "members");
   const fields = can(principal, "phone.read") ? [...MEMBER_FIELDS, "phone"] : MEMBER_FIELDS;
-  return Object.fromEntries(fields.filter(key => Object.hasOwn(member, key)).map(key => [key, ["name", "email", "referral_code"].includes(key) ? privateText(principal, member[key]) : member[key]]));
+  return Object.fromEntries(fields.filter(key => Object.hasOwn(member, key)).map(key => [key, key==="remarks" ? normalizeRemarks(member[key]).map(line=>privateText(principal,line)) : ["name", "email", "referral_code"].includes(key) ? privateText(principal, member[key]) : member[key]]));
 }
 
 // Free-text audit/appointment fields may contain old phone numbers, not just

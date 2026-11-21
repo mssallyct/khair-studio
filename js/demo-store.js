@@ -1,6 +1,7 @@
 import { birthdayStampAward, calculateSale, hongKongDateKey, isValidBusinessSlot, normalizeBirthday, normalizeHongKongPhone, toHongKongIso } from "./rules.js";
 import { buildServiceCatalog, prepareServiceCatalogUpdate, SERVICE_CATALOG_BACKUP_KEY, SERVICE_CATALOG_REVISION } from "./service-catalog.js";
 import { dateOnly, membershipYear } from "./loyalty-v2.js";
+import { normalizeRemarks } from "./member-remarks.js";
 
 const STORAGE_KEY = "khair-demo-v1";
 const CREDENTIALS_KEY = "khair-admin-credentials-v2";
@@ -139,7 +140,7 @@ export class DemoStore {
     throw new Error("此系統不設會員自行註冊。");
   }
 
-  async createMember({ name, phone, email, birthday, referrerId, adminId, joinedDate }) {
+  async createMember({ name, phone, email, birthday, referrerId, adminId, joinedDate, remarks }) {
     const actor = this.actor();
     const joined = dateOnly(joinedDate || hongKongDateKey(new Date()));
     membershipYear(joined);
@@ -151,6 +152,7 @@ export class DemoStore {
     if (this.data.profiles.some(item => item.role === "member" && String(item.phone || "").replace(/\D/g, "") === normalizedPhone.replace(/\D/g, ""))) throw new Error("此電話已登記會員。");
     if (normalizedEmail && this.data.profiles.some(item => String(item.email || "").toLowerCase() === normalizedEmail)) throw new Error("此電郵已登記。");
     const profile = { id: this.id("member"), email: normalizedEmail || null, name: memberName, phone: normalizedPhone, birthday: normalizedBirthday, referral_code: randomCode(memberName), role: "member", active: true, joined_date: joined, created_by: actor.id, created_at: new Date().toISOString() };
+    profile.remarks=normalizeRemarks(remarks);
     this.data.profiles.push(profile);
     if (referrerId) {
       const referrer = this.data.profiles.find(item => item.id === referrerId && item.role === "member");

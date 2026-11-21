@@ -259,3 +259,6 @@ td { font-size: .86rem; }
   .member-profile-actions { width: 100%; justify-content: flex-start; }
   .member-profile-actions .button { flex: 1; }
 }
+.remark-list { margin: 0; padding-left: 1.5rem; }
+.remark-list li { padding: .35rem 0; overflow-wrap: anywhere; white-space: pre-wrap; }
+.remark-list button { margin-left: .75rem; }

@@ -9,6 +9,7 @@ export function expiryNoticeView(members, wallets = {}, at = new Date(), {showEm
 }
 
 export function memberRewardView(member, wallet, at = new Date()) {
+  if(!wallet && member.import_opening)return `<section class="card"><h2>匯入優惠紀錄</h2><div class="grid cols-2"><div><h3>印花數量：${esc(member.import_opening.stamps)}</h3></div><div><h3>剪吹累積次數：${esc(member.import_opening.hairVisits)}</h3></div></div><p class="muted small">空白代表原表未填，並非0。消費前請核對起始資料及未使用優惠；備註不會自動計入營業額。</p></section>`;
   if (!wallet) return `<section class="card"><h2>新制優惠</h2><p class="muted">入會日期及新制起始紀錄待核對；舊消費與印花未有改動。</p></section>`;
   const status = rewardStatus(wallet, at);
   return `<section class="card"><div class="card-head"><h2>會員優惠進度</h2><span>入會：${esc(wallet.joinedDate)}</span></div>

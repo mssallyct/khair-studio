@@ -1,6 +1,7 @@
-const CACHE = "khair-v20";
+const CACHE = "khair-v21";
 const ASSETS = ["./", "./index.html", "./styles.css", "./js/app.js", "./js/api.js", "./js/backend-api.js", "./js/demo-store.js", "./js/rules.js", "./js/service-catalog.js", "./js/access-policy.js", "./js/loyalty-v2.js", "./js/reward-views.js", "./js/revenue.js", "./js/member-search.js", "./js/member-detail.js", "./js/excel-export.js", "./assets/logo.png", "./assets/icon-192.png", "./assets/icon-512.png", "./assets/apple-touch-icon.png", "./manifest.webmanifest", "./config.js"];
 
+ASSETS.push("./js/member-remarks.js");
 self.addEventListener("install", event => event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(ASSETS))));
 self.addEventListener("activate", event => event.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(key => key !== CACHE).map(key => caches.delete(key))))));
 self.addEventListener("fetch", event => {

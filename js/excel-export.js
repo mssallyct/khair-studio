@@ -1,6 +1,7 @@
 import { summarizeRevenue } from "./revenue.js";
 import { formatBirthday, membershipInfo } from "./rules.js";
 import { rewardStatus } from "./loyalty-v2.js";
+import { normalizeRemarks } from "./member-remarks.js";
 
 const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 const encoder = new TextEncoder();
@@ -49,7 +50,7 @@ function buildSheets(data, exportedAt) {
   const assistantById = new Map(assistants.map(item => [item.id, item]));
   const saleById = new Map(sales.map(item => [item.id, item]));
   const adminById = new Map(admins.map(item => [item.id, item]));
-  const balance = memberId => data.rewardWallets?.[memberId] ? rewardStatus(data.rewardWallets[memberId],exportedAt).stampProgress : stamps.filter(item => item.member_id === memberId).reduce((sum, item) => sum + Number(item.delta || 0), 0);
+  const balance = memberId => data.rewardWallets?.[memberId] ? rewardStatus(data.rewardWallets[memberId],exportedAt).stampProgress : memberById.get(memberId)?.import_opening ? memberById.get(memberId).import_opening.stamps : stamps.filter(item => item.member_id === memberId).reduce((sum, item) => sum + Number(item.delta || 0), 0);
   const memberName = id => memberById.get(id)?.name || "";
   const memberPhone = id => memberById.get(id)?.phone || "";
   const serviceName = id => catalogById.get(id)?.name || "";
@@ -78,11 +79,12 @@ function buildSheets(data, exportedAt) {
     },
     {
       name: "會員",
-      headers: ["會員編號", "姓名", "香港電話", "電郵", "生日（月日）", "介紹編號", "印花結餘", "狀態", "建立者", "建立時間", "入會年份", "會員年資（截至匯出日）", "入會日期", "剪吹累積次數", "印花年度到期日", "未用優惠張數"],
+      headers: ["會員編號", "姓名", "香港電話", "電郵", "生日（月日）", "介紹編號", "印花結餘", "狀態", "建立者", "建立時間", "入會年份", "會員年資（截至匯出日）", "入會日期", "剪吹累積次數", "印花年度到期日", "未用優惠張數", "備註 Remark"],
       rows: members.map(item => {
         const membership = membershipInfo(item, exportedAt);
         const reward=data.rewardWallets?.[item.id] ? rewardStatus(data.rewardWallets[item.id],exportedAt) : null;
-        return [item.id, item.name, item.phone || "", item.email || "", formatBirthday(item.birthday), item.referral_code || "", integer(balance(item.id)), item.active === false ? "停用" : "有效", adminName(item.created_by), dateTime(item.created_at), membership.joinedYear === null ? "未記錄" : integer(membership.joinedYear), membership.label, membership.joinedDate || "未記錄", reward?integer(reward.hairVisits):"待核對", reward?.period.end || "待核對", reward?integer(reward.available.length):"待核對"];
+        const imported=!!item.import_opening,hair=reward?reward.hairVisits:item.import_opening?.hairVisits;
+        return [item.id, item.name, item.phone || "", item.email || "", item.birthday ? formatBirthday(item.birthday) : imported ? "" : "未記錄", item.referral_code || "", balance(item.id)==null ? "" : integer(balance(item.id)), item.active === false ? "停用" : "有效", adminName(item.created_by), dateTime(item.created_at), membership.joinedYear === null ? imported ? "" : "未記錄" : integer(membership.joinedYear), imported && !membership.joinedDate ? "" : membership.label, membership.joinedDate || (imported ? "" : "未記錄"), hair==null ? imported ? "" : "待核對" : integer(hair), reward?.period.end || "待核對", reward?integer(reward.available.length):"待核對", normalizeRemarks(item.remarks).map(line=>`• ${line}`).join("\n")];
       })
     },
     {

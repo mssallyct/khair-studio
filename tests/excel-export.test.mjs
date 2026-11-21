@@ -41,6 +41,13 @@ test("管理員匯出多工作表 XLSX", () => {
   assert.match(files.get("xl/worksheets/sheet14.xml"), /累計營業額/);
 });
 
+test('Excel匯入會員空白不變0或今日，備註列點保留',()=>{
+  const files=unzipStoredFiles(buildAdminWorkbook({profiles:[{id:'imported',role:'member',name:'測試匯入',created_at:'2026-11-21T00:00:00Z',joined_date:null,birthday:null,import_opening:{stamps:null,hairVisits:null},remarks:['第一點','第二點']}]}));
+  const xml=files.get('xl/worksheets/sheet2.xml');assert.match(xml,/備註 Remark/);assert.match(xml,/• 第一點/);assert.match(xml,/• 第二點/);
+  for(const col of ['E','G','K','L','M','N'])assert.doesNotMatch(xml,new RegExp(`<c r="${col}2"[^>]*><v>0<`));
+  assert.doesNotMatch(xml,/<c r="K2"[^>]*><v>2026</);
+});
+
 test("Excel 包含由第一宗至今的所有營業額、歷月及累計實收", () => {
   const sales = Array.from({length:1505},(_,i)=>({id:`sale-history-${i}`,member_id:"m1",completed_at:new Date(Date.UTC(2020,0,1+i)).toISOString(),subtotal:100,discount:4.75,final_amount:95.25}));
   const files = unzipStoredFiles(buildAdminWorkbook({sales:[...sales].reverse()},new Date("2026-11-06T00:00:00Z")));

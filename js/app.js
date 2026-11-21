@@ -7,6 +7,7 @@ import { summarizeRevenue } from "./revenue.js";
 import { can, visibleViews, displayDataFor } from "./access-policy.js";
 import { expiryNoticeView, memberRewardView } from "./reward-views.js";
 import { quoteRewards, rewardStatus } from "./loyalty-v2.js";
+import { normalizeRemarks } from "./member-remarks.js";
 
 let api;
 const root = document.querySelector("#app");
@@ -266,7 +267,7 @@ function renderMemberDetail() {
     ${memberRewardView(member, state.data.rewardWallets?.[member.id])}
     ${api.backendMode && !state.data.rewardWallets?.[member.id] && can(state.profile,"members.joined-date") ? `<section class="card"><button class="button" data-action="review-rewards" data-member="${esc(member.id)}">核對入會日期及新制起始紀錄</button></section>` : ""}
     <div class="grid cols-4">
-      ${statCard("現有印花", memberBalance(member.id), state.data.rewardWallets?.[member.id] ? "本輪累積進度；可用優惠另列" : balance >= 8 ? "可享85折" : balance >= 4 ? "可享9折" : `尚欠${Math.max(0, 4 - balance)}個享9折`)}
+      ${statCard("現有印花", memberBalance(member.id), state.data.rewardWallets?.[member.id] ? "本輪累積進度；可用優惠另列" : member.import_opening ? "原表紀錄；可用優惠待核對" : balance >= 8 ? "可享85折" : balance >= 4 ? "可享9折" : `尚欠${Math.max(0, 4 - balance)}個享9折`)}
       ${statCard("累積消費", formatMoney(totalSpend), `${sales.length} 宗消費紀錄`)}
       ${statCard("預約紀錄", appointments.length, "包括待確認及已完成")}
       ${statCard("介紹會員", referredMembers.length, `${rewardedReferralCount} 位已消費並獲印花`)}
@@ -284,6 +285,7 @@ function renderMemberDetail() {
       <section class="card"><div class="card-head"><h2>預約紀錄</h2><span class="muted small">共 ${appointments.length} 項</span></div>${appointmentList(appointments, false)}</section>
     </div>
     <section class="card"><div class="card-head"><h2>印花紀錄</h2><button class="button ghost small" data-action="stamps-member" data-member="${esc(member.id)}">調整印花</button></div>${stampLedgerList(stamps)}</section>
+    <section class="card member-remarks"><div class="card-head"><h2>備註 Remark</h2>${api.backendMode && can(state.profile,"members.remarks") ? `<button class="button ghost small" data-action="edit-member-remarks" data-member="${esc(member.id)}">＋ 新增備註</button>` : ""}</div>${normalizeRemarks(member.remarks).length ? `<ul class="remark-list">${normalizeRemarks(member.remarks).map((line,index)=>`<li><span>${esc(line)}</span>${api.backendMode && can(state.profile,"members.remarks") ? `<button class="button ghost small" data-action="delete-member-remark" data-member="${esc(member.id)}" data-index="${index}">刪除</button>` : ""}</li>`).join("")}</ul>` : ""}</section>
   </div>`;
 }
 
@@ -338,6 +340,7 @@ function renderAuditLog() {
 }
 
 function renderModal() {
+  if(["member-remarks","member-remark-delete"].includes(state.modal.type))return memberRemarksModal();
   if (["admin-new","admin-delete"].includes(state.modal.type)) return adminModal();
   if (state.modal.type === "legacy-import") return legacyImportModal();
   if (state.modal.type === "reward-opening") return rewardOpeningModal();
@@ -361,7 +364,8 @@ function legacyImportModal(){
 function rewardOpeningModal(){
   const member=state.data.profiles.find(m=>m.id===state.modal.memberId),membership=membershipInfo(member);
   if(!member)return "";
-  const field=(name,label,max)=>`<label class="field"><span>${label}</span><input type="number" name="${name}" required min="0" max="${max}" step="1" placeholder="請核對後填寫，包括0"></label>`;
+  const opening=member.import_opening || {};
+  const field=(name,label,max)=>`<label class="field"><span>${label}</span><input type="number" name="${name}" required min="0" max="${max}" step="1" value="${esc(name==="stampProgress" ? opening.stamps ?? "" : name==="hairVisits" ? opening.hairVisits ?? "" : "")}" placeholder="請核對後填寫，包括0"></label>`;
   return `<div class="modal-backdrop"><section class="modal wide"><div class="modal-head"><h2>核對 ${esc(member.name)} 的新制起始紀錄</h2><button class="icon-button" data-action="close-modal">×</button></div><p class="demo-note">原有印花帳簿合計 ${memberBalance(member.id)} 個。以下不會自動推算舊優惠是否已用；請按實際紀錄填寫，歷史消費不會重算。</p><form id="reward-opening-form" class="form-grid"><label class="field"><span>實際入會日期（請核對）</span><input name="joinedDate" type="date" required max="${localDate(new Date())}" value="${esc(membership.joinedDate || "")}"></label>${field("stampProgress","本輪已累積印花（0–7）",7)}${field("hairVisits","三款剪吹已累積次數（0–9）",9)}${field("stamp4Coupons","尚未使用的4印9折優惠張數",50)}${field("stamp8Coupons","尚未使用的8印85折優惠張數",50)}${field("hairCoupons","尚未使用的剪吹10次9折優惠張數",50)}<label class="field span-2"><span>核對依據／原因</span><textarea name="reason" required></textarea></label><label class="field span-2"><span><input name="confirmed" type="checkbox" required> 已核對日期、次數及未用優惠，確認一次性建立起始紀錄</span></label><button class="button primary span-2" type="submit">確認及保存核對紀錄</button></form></section></div>`;
 }
 
@@ -453,6 +457,7 @@ function memberModal() {
       <label class="field"><span>入會日期</span><input name="joinedDate" type="date" required max="${localDate(new Date())}" value="${localDate(new Date())}"></label>
       <div class="field"><span id="member-birthday-label">生日（選填，可只填月份）</span><div class="birthday-fields" role="group" aria-labelledby="member-birthday-label"><select name="birthdayMonth" id="member-birthday-month" aria-label="生日月份"><option value="">月份</option>${Array.from({length:12},(_,i)=>`<option value="${i+1}">${i+1}月</option>`).join("")}</select><select name="birthdayDay" id="member-birthday-day" aria-label="生日日期（選填）" disabled>${birthdayDayOptions("")}</select></div><small>日期可留空，無需出生年份。</small></div>
       <label class="field span-2"><span>電郵（選填）</span><input name="email" type="email" autocomplete="off" placeholder="沒有可留空"></label>
+      <label class="field span-2"><span>備註 Remark（選填，每行一點）</span><textarea name="remarks" maxlength="30000" rows="4"></textarea></label>
       ${memberPhoneLookup({ name: "referrerId", inputId: "referrer-member-phone", label: "介紹人（選填，以電話搜尋）" })}
       <p class="muted small span-2">生日無需填出生年份。請核對實際入會日期；年資及印花年度按此日期計算。會員不會獲得登入帳戶。</p>
       <button class="button primary full span-2" type="submit">建立會員</button>
@@ -462,6 +467,14 @@ function memberModal() {
 
 function birthdayDayOptions(month, selected = "") {
   return `<option value="">日期（選填）</option>${Array.from({length:birthdayDaysInMonth(month)},(_,i)=>`<option value="${i+1}" ${Number(selected)===i+1?"selected":""}>${i+1}日</option>`).join("")}`;
+}
+
+function memberRemarksModal(){
+  if(!api.backendMode || !can(state.profile,"members.remarks"))return "";
+  const member=state.data.profiles.find(p=>p.id===state.modal.memberId && p.role==="member");
+  if(!member)return "";
+  const deleting=state.modal.type==="member-remark-delete";
+  return `<div class="modal-backdrop"><section class="modal"><div class="modal-head"><div><h2>${deleting?"刪除備註":"新增備註 Remark"}</h2><p>${esc(member.name)}</p></div><button class="icon-button" data-action="close-modal">×</button></div>${deleting?`<p>確認刪除以下一點備註？</p><p>${esc(normalizeRemarks(member.remarks)[state.modal.index])}</p><div class="actions"><button class="button ghost" data-action="close-modal">取消</button><button class="button danger" data-action="confirm-delete-member-remark">確認刪除</button></div>`:`<form id="member-remarks-form"><label class="field"><span>每行一點</span><textarea name="remarks" rows="6" maxlength="30000" required></textarea></label><button class="button primary full" type="submit">新增備註</button></form>`}</section></div>`;
 }
 
 function saleModal() {
@@ -613,6 +626,7 @@ function stampLedgerList(items, admin = false) {
 }
 
 function bindForms() {
+  root.querySelector("#member-remarks-form")?.addEventListener("submit",onMemberRemarks);
   root.querySelector("#admin-form")?.addEventListener("submit",onAdminAccount);
   root.querySelector("#legacy-import-form")?.addEventListener("submit",onLegacyImport);
   root.querySelector("#reward-opening-form")?.addEventListener("submit",onRewardOpening);
@@ -663,6 +677,20 @@ root.addEventListener("click", async event => {
   if (!target) return;
   const { action } = target.dataset;
   try {
+    if(action==="edit-member-remarks"){
+      if(!api.backendMode || !can(state.profile,"members.remarks"))throw new Error("你沒有此操作權限。");
+      const member=state.data.profiles.find(p=>p.id===target.dataset.member);
+      state.modal={type:"member-remarks",memberId:target.dataset.member,version:member?.remarks_version || 0};render();return;
+    }
+    if(action==="delete-member-remark"){
+      if(!api.backendMode || !can(state.profile,"members.remarks"))throw new Error("你沒有此操作權限。");
+      const member=state.data.profiles.find(p=>p.id===target.dataset.member);
+      state.modal={type:"member-remark-delete",memberId:member.id,index:Number(target.dataset.index),version:member.remarks_version || 0};render();return;
+    }
+    if(action==="confirm-delete-member-remark"){
+      if(!can(state.profile,"members.remarks") || state.modal?.type!=="member-remark-delete")throw new Error("你沒有此操作權限。");
+      await busy(target,async()=>{await api.deleteMemberRemark(state.modal.memberId,state.modal.index,state.modal.version);state.modal=null;toast("指定備註已刪除，其他資料保留。");await refresh();});return;
+    }
     if(["new-admin","delete-admin","confirm-delete-admin"].includes(action)){
       if(!api.backendMode || api.testingMode || !can(state.profile,"admins.manage"))throw new Error("你沒有此操作權限。");
       if(action==="confirm-delete-admin"){
@@ -780,6 +808,14 @@ async function onMember(event) {
     state.modal=null;
     toast("新會員已建立。");
     await refresh();
+  });
+}
+
+async function onMemberRemarks(event){
+  event.preventDefault();const remarks=new FormData(event.currentTarget).get("remarks");
+  await busy(event.submitter,async()=>{
+    if(!can(state.profile,"members.remarks"))throw new Error("你沒有此操作權限。");
+    await api.addMemberRemarks(state.modal.memberId,remarks,state.modal.version);state.modal=null;toast("備註已新增。");await refresh();
   });
 }
 
@@ -951,7 +987,7 @@ async function busy(button, fn) {
   finally { if(button&&button.isConnected){button.disabled=false;button.innerHTML=label;} }
 }
 
-function memberBalance(memberId) { const wallet=state.data.rewardWallets?.[memberId];return wallet ? rewardStatus(wallet).stampProgress : state.data.stamps.filter(item=>item.member_id===memberId).reduce((sum,item)=>sum+Number(item.delta),0); }
+function memberBalance(memberId) { const wallet=state.data.rewardWallets?.[memberId],member=state.data.profiles.find(m=>m.id===memberId);return wallet ? rewardStatus(wallet).stampProgress : member?.import_opening ? member.import_opening.stamps ?? "" : state.data.stamps.filter(item=>item.member_id===memberId).reduce((sum,item)=>sum+Number(item.delta),0); }
 function memberName(id) { return state.data.profiles?.find(item=>item.id===id)?.name || "會員"; }
 function serviceName(id) { return state.data.catalog?.find(item=>item.id===id)?.name || "服務"; }
 function stylistName(id) { return state.data.stylists?.find(item=>item.id===id)?.name || "髮型師"; }

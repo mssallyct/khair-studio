@@ -41,6 +41,8 @@ export class BackendApi {
   async disableAdmin(id){return this.request("/admins/disable",{method:"POST",body:{id}});}
   async searchMembers(query){return this.request('/members/search',{method:'POST',body:{query}});}
   async createMember(input){return this.request("/members",{method:"POST",body:input});}
+  async addMemberRemarks(memberId,remarks,expectedVersion){return this.request("/members/remarks",{method:"POST",body:{memberId,remarks,expectedVersion,operation:"append"}});}
+  async deleteMemberRemark(memberId,index,expectedVersion){return this.request("/members/remarks",{method:"POST",body:{memberId,index,expectedVersion,operation:"delete"}});}
   async updateMemberJoinedDate(memberId,joinedDate){return this.request("/members/joined-date",{method:"POST",body:{memberId,joinedDate}});}
   async reviewRewardOpening(input){return this.request("/members/rewards/opening",{method:"POST",body:input});}
   async importLegacy(snapshot){return this.request("/migration/import",{method:"POST",body:{snapshot,confirmed:true}});}

@@ -13,6 +13,7 @@ await mkdir(join(test,'server'),{recursive:true});
 let gateway=await readFile(join(root,'server/gateway.mjs'),'utf8');
 // Public role-picker sandbox must never bundle credential code or accept passwords.
 gateway=gateway.replace('import { newAdmin } from "./admin-management.mjs";',`function newAdmin(){throw new Error('測試版不可管理正式帳戶。');}`);
+gateway=gateway.replace('import { importMemberRows } from "./member-import.mjs";',`function importMemberRows(){throw new Error('測試版不可匯入真實會員。');}`);
 gateway=gateway.replace('import { randomUUID, createHash } from "node:crypto";',`const randomUUID=()=>crypto.randomUUID();\nasync function digest(value){return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(value))),b=>b.toString(16).padStart(2,'0')).join('');}`);
 const before=gateway;
 gateway=gateway.replace(/createHash\("sha256"\)\.update\((JSON\.stringify\(\[body\.memberId[^\n]+?\]\))\)\.digest\("hex"\)/,'await digest($1)');
