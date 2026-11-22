@@ -565,7 +565,7 @@ function saleItemRow(item,index) {
   return `<div class="list-item sale-item-card ${item.justAdded ? "sale-item-new" : ""}"><div class="form-grid" style="flex:1">
     <label class="field span-2"><span>項目</span><select data-sale-catalog data-index="${index}" required>${catalogOptions(item.catalogId)}</select></label>
     <label class="field"><span>數量</span><input data-sale-field="quantity" data-index="${index}" type="number" min="1" value="${item.quantity}"></label>
-    <label class="field"><span>單價</span><input data-sale-field="unitPrice" data-index="${index}" type="number" min="0" step="0.01" value="${item.unitPrice}" ${api.backendMode ? "readonly" : ""}></label>
+    <label class="field"><span>本次單價（可修改）</span><input data-sale-field="unitPrice" data-index="${index}" type="number" min="0" max="1000000" step="0.01" required value="${esc(item.unitPrice)}"></label>
   </div>${state.saleItems.length>1?`<button class="icon-button" type="button" data-action="remove-sale-item" data-index="${index}">×</button>`:""}</div>`;
 }
 
@@ -912,7 +912,7 @@ function updateSaleCatalog(event) {
 
 function updateSaleItem(event) {
   const index=Number(event.target.dataset.index); const field=event.target.dataset.saleField;
-  state.saleItems[index][field]=["quantity","unitPrice"].includes(field)?Number(event.target.value):event.target.value; render();
+  state.saleItems[index][field]=["quantity","unitPrice"].includes(field) && event.target.value!==""?Number(event.target.value):event.target.value; render();
 }
 
 function catalogToSaleItem(item){return {catalogId:item.id,kind:item.kind,name:item.name,quantity:1,unitPrice:Number(item.price)||0};}
@@ -999,7 +999,7 @@ function saleTeamText(item) {
   return team.length ? team.join("、") : "未記錄";
 }
 function statusClass(status) { return status.replace("_","-"); }
-function stampType(type) { return ({spending:"消費印花",birthday:"生日獎賞",referral:"介紹朋友",redemption:"兌換優惠",admin_adjustment:"管理員調整"})[type]||type; }
+function stampType(type) { return ({spending:"消費印花",birthday:"生日獎賞",referral:"介紹朋友",redemption:"兌換優惠",admin_adjustment:"管理員調整",opening_balance:"匯入起始印花"})[type]||type; }
 function statCard(label,value,hint){return `<section class="card stat"><span class="label">${label}</span><strong class="value">${value}</strong><span class="hint">${hint}</span></section>`;}
 function profileRow(label,value){return `<div class="list-item"><span class="muted">${label}</span><strong>${esc(value)}</strong></div>`;}
 function empty(text){return `<div class="empty">${text}</div>`;}

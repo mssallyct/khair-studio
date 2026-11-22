@@ -1,6 +1,6 @@
 import { randomUUID, createHash } from "node:crypto";
 import { accountName, can, requirePermission, memberFor, auditFor, privateText, displayDataFor } from "../js/access-policy.js";
-import { createRewardWallet, dateOnly, expiryNotices, membershipYear, quoteRewards, adjustRewardStamps } from "../js/loyalty-v2.js";
+import { createRewardWallet, dateOnly, expiryNotices, membershipYear, quoteRewards, adjustRewardStamps, saleUnitPrice } from "../js/loyalty-v2.js";
 import { hongKongDateKey, normalizeBirthday, normalizeHongKongPhone, birthdayStampAward } from "../js/rules.js";
 import { summarizeRevenue } from "../js/revenue.js";
 import { DemoStore } from "../js/demo-store.js";
@@ -9,6 +9,7 @@ import { prepareLegacyImport, reviewedOpening } from "./migration.mjs";
 import { newAdmin } from "./admin-management.mjs";
 import { normalizeRemarks } from "../js/member-remarks.js";
 import { importMemberRows } from "./member-import.mjs";
+import { activateImportedMembers } from "../js/import-activation.js";
 
 // Adapter contract: authenticate verifies a server-side session, never request
 // role/username headers. transaction locks the data, commits atomically on success
@@ -108,7 +109,7 @@ export function createGateway({ repository, authenticate, auth, allowedOrigins =
       }
       if (request.method !== "POST") throw failure(405,"不支援此操作。");
       const actionName=path.startsWith("/actions/") ? path.slice(9) : null;
-      const permission = ({"/members":"members.create","/members/import":"migration","/members/remarks":"members.remarks","/members/joined-date":"members.joined-date","/members/rewards/opening":"members.joined-date","/migration/import":"migration","/sales":"sales.create"})[path] || ACTIONS[actionName];
+      const permission = ({"/members":"members.create","/members/import":"migration","/members/import/activate":"migration","/members/remarks":"members.remarks","/members/joined-date":"members.joined-date","/members/rewards/opening":"members.joined-date","/migration/import":"migration","/sales":"sales.create"})[path] || ACTIONS[actionName];
       if (!permission) throw failure(404,"找不到此功能。");
       requirePermission(principal,permission);
       const raw = await request.text();
@@ -118,6 +119,7 @@ export function createGateway({ repository, authenticate, auth, allowedOrigins =
       const result = await repository.transaction(async data => {
         try {
         const timestamp = now.toISOString();
+        if(path==="/members/import/activate")return activateImportedMembers(data,body,principal,now);
         if(path==="/members/import")return importMemberRows(data,body,principal,now);
         if(path==="/members/remarks"){
           const member=data.profiles.find(p=>p.id===body.memberId && p.role==="member");
@@ -190,11 +192,16 @@ export function createGateway({ repository, authenticate, auth, allowedOrigins =
           if (!member) throw failure(404,"找不到會員。");
           const joined = dateOnly(body.joinedDate); membershipYear(joined,now);
           const wallet=data.rewardWallets?.[member.id];
-          if (wallet && (Object.keys(wallet.receipts || {}).length || Object.keys(wallet.adjustments || {}).length || wallet.stampProgress || wallet.hairVisits || wallet.coupons?.length)) throw failure(409,"已有新制優惠，請先核對印花有效期，不能直接改期。");
+          const fillingMissingImportDate=!!member.import_opening && !member.joined_date;
+          if (!fillingMissingImportDate && wallet && (Object.keys(wallet.receipts || {}).length || Object.keys(wallet.adjustments || {}).length || wallet.stampProgress || wallet.hairVisits || wallet.coupons?.length)) throw failure(409,"已有新制優惠，請先核對印花有效期，不能直接改期。");
           // Recording a date does not import balances or grant retroactive rewards.
           const previous = member.joined_date || null;
           member.joined_date = joined;
-          if (data.rewardWallets?.[member.id]) data.rewardWallets[member.id] = createRewardWallet(member,now);
+          if (data.rewardWallets?.[member.id]) {
+            const wallet=data.rewardWallets[member.id],period=membershipYear(joined,now);
+            wallet.joinedDate=joined;wallet.periodStart=period.start;wallet.periodEnd=period.end;
+            for(const coupon of wallet.coupons)if(coupon.kind!=="hair10" && !coupon.usedAt && !coupon.expired)coupon.expiresAt=period.expiresAt;
+          }
           audit(data,principal,"member.joined_date_updated",member.id,`入會日期：${previous || "未記錄"} → ${joined}`,timestamp);
           return {id:member.id,joinedDate:joined};
         }
@@ -216,7 +223,8 @@ export function createGateway({ repository, authenticate, auth, allowedOrigins =
         const items = body.items.map(line=>{
           const catalog = data.catalog.find(c=>c.id===line.catalogId && c.active!==false);
           if (!catalog) throw failure(400,"請選擇現行項目。");
-          return {catalogId:catalog.id,name:catalog.name,kind:catalog.kind,reward_group:catalog.reward_group,unitPrice:Number(catalog.price),quantity:Number(line.quantity)};
+          const unitPrice=saleUnitPrice(Object.hasOwn(line,"unitPrice")?line.unitPrice:catalog.price);
+          return {catalogId:catalog.id,name:catalog.name,kind:catalog.kind,reward_group:catalog.reward_group,unitPrice,catalogUnitPrice:Number(catalog.price),quantity:Number(line.quantity)};
         });
         const appointment=body.appointmentId ? data.appointments.find(a=>a.id===body.appointmentId && a.member_id===member.id && ["pending","confirmed"].includes(a.status)) : null;
         if(body.appointmentId && !appointment)throw failure(409,"此預約已處理或不屬於此會員。");
@@ -225,11 +233,11 @@ export function createGateway({ repository, authenticate, auth, allowedOrigins =
         if(body.expectedFinalAmount!=null && Math.round(Number(body.expectedFinalAmount)*100)!==Math.round(r.finalAmount*100))throw failure(409,"項目價格或優惠狀態已更新，請重新載入及確認實收金額。");
         const sale = {id:requestId,member_id:member.id,appointment_id:appointment?.id || null,stylist_id:body.stylistId,assistant_id:body.assistantId || null,subtotal:r.subtotal,discount:r.discount,final_amount:r.finalAmount,discount_label:r.discountLabel,completed_at:timestamp,completed_by:principal.id,policy_version:r.policyVersion};
         data.sales.push(sale);
-        for (const line of items) data.saleItems.push({id:randomUUID(),sale_id:requestId,catalog_id:line.catalogId,name:line.name,kind:line.kind,quantity:line.quantity,unit_price:line.unitPrice});
+        for (const line of items) data.saleItems.push({id:randomUUID(),sale_id:requestId,catalog_id:line.catalogId,name:line.name,kind:line.kind,quantity:line.quantity,unit_price:line.unitPrice,catalog_unit_price:line.catalogUnitPrice});
         data.rewardWallets[member.id] = calculated.wallet;
         for(const [type,delta,reason] of [["spending",r.earnedStamps,`新制消費印花；計印花金額HK$${r.stampEarningAmount}`],["birthday",r.bonusStamps,`${hongKongDateKey(now).slice(0,4)} 生日月份獎賞`]])if(delta)data.stampLedger.push({id:randomUUID(),member_id:member.id,delta,type,reason,sale_id:requestId,created_by:principal.id,created_at:timestamp,policy_version:r.policyVersion});
         const referral=data.referrals.find(row=>row.referred_member_id===member.id && !row.awarded_at);
-        if(referral && r.stampEarningAmount>0){
+        if(referral && items.some(line=>line.kind==="service" && line.unitPrice*line.quantity>0)){
           const referrerWallet=data.rewardWallets?.[referral.referrer_id];
           if(!referrerWallet)throw failure(409,"介紹人的新制起始紀錄尚未核對；本次消費未有寫入。");
           const id=`ref-${requestId}`;
@@ -239,6 +247,8 @@ export function createGateway({ repository, authenticate, auth, allowedOrigins =
         }
         if(appointment)appointment.status="completed";
         audit(data,principal,"sale.completed",requestId,`完成消費 HK$${r.finalAmount}`,timestamp);
+        const priceChanges=items.filter(line=>line.unitPrice!==line.catalogUnitPrice);
+        if(priceChanges.length)audit(data,principal,"sale.prices_adjusted",requestId,priceChanges.map(line=>`${line.name}：HK$${line.catalogUnitPrice} → HK$${line.unitPrice}`).join("；"),timestamp);
         const result = {saleId:requestId,receipt:r};
         (data.checkoutRequests ||= {})[requestId] = {fingerprint,result};
         return result;

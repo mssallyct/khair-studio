@@ -76,15 +76,23 @@ export function rewardStatus(wallet, at = new Date()) {
   return { stampProgress: next.stampProgress, hairVisits: next.hairVisits, available, period, expiring: period.daysRemaining <= 14 && (next.stampProgress > 0 || available.some(c => c.kind !== "hair10")) };
 }
 
-// Items must come from the server's current catalog, never client-supplied names,
-// prices or reward groups. One completed checkout counts as at most one visit.
+export function saleUnitPrice(value) {
+  if ((typeof value!=="number" && typeof value!=="string") || String(value).trim()==="") throw new Error("請填寫有效單價。");
+  const price=Number(value);
+  if(!Number.isFinite(price) || price<0 || price>1000000 || Math.abs(price*100-Math.round(price*100))>0.000001)throw new Error("單價須為0至1,000,000，最多兩位小數。");
+  return Math.round(price*100)/100;
+}
+
+// Names/kinds/reward groups come from the catalog. Authorized administrators
+// may override this sale's unit prices; the catalog itself is never changed.
+// One completed checkout counts as at most one visit.
 export function quoteRewards({ wallet, items, saleId, at = new Date(), couponId = null, birthdayBonus = 0 }) {
   validateWallet(wallet);
   if (!/^[a-zA-Z0-9_-]{1,100}$/.test(String(saleId || ""))) throw new Error("缺少有效交易編號。");
   if (wallet.receipts[saleId]) throw new Error("此消費已處理，請勿重複收款。");
   if (!Array.isArray(items) || !items.length) throw new Error("請選擇消費項目。");
   const lines = items.map(item => {
-    const quantity = Number(item.quantity), price = Number(item.unitPrice);
+    const quantity = Number(item.quantity), price = saleUnitPrice(item.unitPrice);
     if (!Number.isSafeInteger(quantity) || quantity < 1 || !Number.isFinite(price) || price < 0 || !["service", "product"].includes(item.kind)) throw new Error("消費項目無效。");
     const cents = Math.round(price * 100) * quantity;
     if (!Number.isSafeInteger(cents) || cents > 100000000) throw new Error("消費金額超出可處理範圍。");
