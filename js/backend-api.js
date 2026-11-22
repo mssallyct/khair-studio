@@ -46,7 +46,7 @@ export class BackendApi {
   async updateMemberJoinedDate(memberId,joinedDate){return this.request("/members/joined-date",{method:"POST",body:{memberId,joinedDate}});}
   async reviewRewardOpening(input){return this.request("/members/rewards/opening",{method:"POST",body:input});}
   async importLegacy(snapshot){return this.request("/migration/import",{method:"POST",body:{snapshot,confirmed:true}});}
-  async completeSale(input){return this.request("/sales",{method:"POST",body:{requestId:input.requestId,memberId:input.memberId,appointmentId:input.appointmentId,stylistId:input.stylistId,assistantId:input.assistantId,couponId:input.couponId || null,expectedFinalAmount:input.expectedFinalAmount,items:input.items.map(i=>({catalogId:i.catalogId,quantity:Number(i.quantity),unitPrice:i.unitPrice}))}});}
+  async completeSale(input){return this.request("/sales",{method:"POST",body:{requestId:input.requestId,memberId:input.memberId,appointmentId:input.appointmentId,stylistId:input.stylistId,assistantId:input.assistantId,couponId:input.couponId || null,expectedFinalAmount:input.expectedFinalAmount,items:input.items.map(i=>({catalogId:i.catalogId,quantity:Number(i.quantity)}))}});}
   async action(name,args){return this.request(`/actions/${name}`,{method:"POST",body:{args}});}
   createAppointment(input){return this.action("createAppointment",[input]);}
   updateAppointmentStatus(id,status){return this.action("updateAppointmentStatus",[id,status]);}

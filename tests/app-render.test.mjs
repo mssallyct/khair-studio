@@ -169,7 +169,7 @@ test("五個新管理員首頁只保留待確認及今日行程，不能直入�
   }
 });
 
-test("後端結帳畫面即時使用第4印優惠，進度不扣走，單價可修改",()=>{
+test("後端結帳畫面即時使用第4印優惠，進度不扣走，單價按價目表不可改",()=>{
   const context=renderContext(),now=new Date();
   const member={id:"member-1",role:"member",name:"測試會員",joined_date:rules.hongKongDateKey(now)};
   const wallet=createRewardWallet(member,now);wallet.stampProgress=3;
@@ -179,7 +179,7 @@ test("後端結帳畫面即時使用第4印優惠，進度不扣走，單價可�
   const id=runInContext("backendSaleQuote(null).addedCoupons[0].id",context);context.coupon=id;
   runInContext("state.modal.couponId=coupon;",context);
   const html=runInContext("saleModal()",context);
-  assert.ok(html.includes(rules.formatMoney(540)));assert.match(html,/本輪印花進度<\/span><strong>4／8/);assert.doesNotMatch(html,/data-sale-field="unitPrice"[^>]+readonly/);assert.match(html,/本次單價（可修改）/);
+  assert.ok(html.includes(rules.formatMoney(540)));assert.match(html,/本輪印花進度<\/span><strong>4／8/);assert.match(html,/data-sale-field="unitPrice"[^>]+readonly/);assert.match(html,/單價（按價目表）/);assert.doesNotMatch(html,/本次單價（可修改）/);
   assert.equal(wallet.stampProgress,3);assert.equal(Object.keys(wallet.receipts).length,0);
   runInContext('state.modal.couponId="expired";',context);assert.match(runInContext("saleModal()",context),/原優惠不適用，請重新選擇/);
   runInContext("state.modal.couponId=null;",context);assert.doesNotMatch(runInContext("saleModal()",context),/原優惠不適用/);

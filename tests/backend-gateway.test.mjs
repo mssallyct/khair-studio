@@ -19,6 +19,17 @@ function harness(username="howood"){
   return {call,data:()=>data,counts:()=>({reads,writes}),replace:value=>data=value};
 }
 
+test('無姓名到期提醒API保留電話欄但只傳給Howood',async()=>{
+ for(const name of ['howood','sally','admin135']){
+  const h=harness(name),m=h.data().profiles[0];m.name=' ';m.joined_date='2025-11-29';h.data().rewardWallets.m1=createRewardWallet(m,now);h.data().rewardWallets.m1.stampProgress=2;
+  const before=JSON.stringify(h.data()),home=await(await h.call('/home')).json();
+  assert.equal(JSON.stringify(home).includes('9123'),name==='howood');
+  if(name==='howood')assert.equal(home.expiry[0].phone,'9123 4567');
+  if(name==='sally')assert.equal(Object.hasOwn(home.expiry[0],'phone'),false);
+  assert.equal(JSON.stringify(h.data()),before);
+ }
+});
+
 test('backend stores month-only and full birthdays without inventing or rewriting old dates',async()=>{
   const h=harness(),before=JSON.stringify(h.data().profiles[0]);
   for(const [birthday,phone] of [['11','21234567'],['02-29','21234568'],[null,'21234569']]){
@@ -64,21 +75,21 @@ test("Sally API及匯出無電話；Howood可見；新管理員直呼敏感API�
   }
 });
 
-test("管理員可改單價；分類由正式項目決定，記實際操作者、重複提交只收一次",async()=>{
-  const h=harness("admin135"),body={requestId:"checkout-request-001",memberId:"m1",stylistId:"sty-a",adminId:"admin-howood",items:[{catalogId:"color",quantity:1,unitPrice:700,name:"單剪",reward_group:"hair_visit"}]};
+test("單價及分類由正式項目決定，記實際操作者、重複提交只收一次",async()=>{
+  const h=harness("admin135"),body={requestId:"checkout-request-001",memberId:"m1",stylistId:"sty-a",adminId:"admin-howood",items:[{catalogId:"color",quantity:1,unitPrice:600,name:"單剪",reward_group:"hair_visit"}]};
   const results=await Promise.all([h.call("/sales",body),h.call("/sales",body)]);
-  for(const response of results){assert.equal(response.status,200);const json=await response.json();assert.equal(json.receipt.finalAmount,700);assert.equal(json.receipt.earnedStamps,1);}
-  assert.equal(h.data().sales.length,1);assert.equal(h.data().saleItems[0].unit_price,700);assert.equal(h.data().saleItems[0].catalog_unit_price,600);assert.equal(h.data().catalog[0].price,600);assert.equal(h.data().auditLog.at(-1).actor_username,"admin135");
+  for(const response of results){assert.equal(response.status,200);const json=await response.json();assert.equal(json.receipt.finalAmount,600);assert.equal(json.receipt.earnedStamps,1);}
+  assert.equal(h.data().sales.length,1);assert.equal(h.data().saleItems[0].unit_price,600);assert.equal(h.data().saleItems[0].catalog_unit_price,600);assert.equal(h.data().catalog[0].price,600);assert.equal(h.data().auditLog.at(-1).actor_username,"admin135");
   assert.equal(h.data().rewardWallets.m1.stampProgress,1);
   const before=JSON.stringify(h.data());assert.equal((await h.call("/sales",{...body,items:[{catalogId:"color",quantity:2}]})).status,409);assert.equal(JSON.stringify(h.data()),before);
 });
 
-test('彈性單價計產品95折及第10次剪吹9折；無效單價整單拒絕',async()=>{
+test('取消改價後按價目表計產品95折及第10次剪吹9折；繞過前端改價亦拒絕',async()=>{
  const h=harness();h.data().catalog.push({id:'hair',kind:'service',name:'洗剪吹',price:168,active:true},{id:'prod',kind:'product',name:'產品',price:100,active:true});h.data().rewardWallets.m1.hairVisits=9;
- const body={requestId:'flex-price-checkout-01',memberId:'m1',stylistId:'sty-a',items:[{catalogId:'hair',quantity:1,unitPrice:150},{catalogId:'prod',quantity:2,unitPrice:80.5}]};
- const r=await(await h.call('/sales',body)).json();assert.equal(r.receipt.hairDiscount,15);assert.equal(r.receipt.productDiscount,8.05);assert.equal(r.receipt.finalAmount,287.95);assert.equal(r.receipt.earnedStamps,0);
+ const body={requestId:'fixed-price-checkout-01',memberId:'m1',stylistId:'sty-a',items:[{catalogId:'hair',quantity:1},{catalogId:'prod',quantity:2}]};
+ const r=await(await h.call('/sales',body)).json();assert.equal(r.receipt.hairDiscount,16.8);assert.equal(r.receipt.productDiscount,10);assert.equal(r.receipt.finalAmount,341.2);assert.equal(r.receipt.earnedStamps,0);
  const before=JSON.stringify(h.data());
- for(const value of [null,'',-1,'abc',1.001,1000001])assert.equal((await h.call('/sales',{...body,requestId:'invalid-price-request',items:[{catalogId:'color',quantity:1,unitPrice:value}]})).status,400);
+ for(const value of [null,'',-1,'abc',1.001,1000001,500,700])assert.equal((await h.call('/sales',{...body,requestId:'invalid-price-request',items:[{catalogId:'color',quantity:1,unitPrice:value}]})).status,400);
  assert.equal(JSON.stringify(h.data()),before);
  assert.equal((await h.call('/sales',{...body,items:[{catalogId:'hair',quantity:1,unitPrice:160}]})).status,409);
 });
@@ -88,7 +99,7 @@ test('介紹人獎賞涵蓋三款剪吹及不足600服務，純產品不派，�
   const h=harness();h.data().catalog[0]={id:'color',name,kind,price:100,active:true};
   const ref={id:'ref',role:'member',name:'介紹人',joined_date:'2026-01-01'};h.data().profiles.push(ref);h.data().rewardWallets.ref=createRewardWallet(ref,now);
   h.data().referrals.push({id:'rel',referrer_id:'ref',referred_member_id:'m1',awarded_at:null});
-  const body={requestId:'referral-service-001',memberId:'m1',stylistId:'sty-a',items:[{catalogId:'color',quantity:1,unitPrice:80}]};
+  const body={requestId:'referral-service-001',memberId:'m1',stylistId:'sty-a',items:[{catalogId:'color',quantity:1,unitPrice:100}]};
   assert.equal((await h.call('/sales',body)).status,200);assert.equal(h.data().rewardWallets.ref.stampProgress,eligible?1:0);
   await h.call('/sales',body);await h.call('/sales',{...body,requestId:'referral-service-002'});
   assert.equal(h.data().stampLedger.filter(s=>s.type==='referral').length,eligible?1:0);

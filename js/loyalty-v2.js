@@ -83,8 +83,7 @@ export function saleUnitPrice(value) {
   return Math.round(price*100)/100;
 }
 
-// Names/kinds/reward groups come from the catalog. Authorized administrators
-// may override this sale's unit prices; the catalog itself is never changed.
+// Names/kinds/reward groups and unit prices come from the server catalog.
 // One completed checkout counts as at most one visit.
 export function quoteRewards({ wallet, items, saleId, at = new Date(), couponId = null, birthdayBonus = 0 }) {
   validateWallet(wallet);
@@ -149,7 +148,7 @@ export function expiryNotices(members, wallets, at = new Date()) {
     const wallet = wallets[member.id];
     if (!wallet) return [];
     const status = rewardStatus(wallet, at);
-    return status.expiring ? [{ memberId: member.id, name: member.name, daysRemaining: status.period.daysRemaining, expiresAt: status.period.expiresAt, stampProgress: status.stampProgress }] : [];
+    return status.expiring ? [{ memberId: member.id, name: String(member.name || "").trim(), phone:member.phone || null, daysRemaining: status.period.daysRemaining, expiresAt: status.period.expiresAt, stampProgress: status.stampProgress }] : [];
   });
 }
 

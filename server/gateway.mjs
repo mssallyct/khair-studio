@@ -223,7 +223,8 @@ export function createGateway({ repository, authenticate, auth, allowedOrigins =
         const items = body.items.map(line=>{
           const catalog = data.catalog.find(c=>c.id===line.catalogId && c.active!==false);
           if (!catalog) throw failure(400,"請選擇現行項目。");
-          const unitPrice=saleUnitPrice(Object.hasOwn(line,"unitPrice")?line.unitPrice:catalog.price);
+          const unitPrice=saleUnitPrice(catalog.price);
+          if(Object.hasOwn(line,"unitPrice") && saleUnitPrice(line.unitPrice)!==unitPrice)throw failure(400,"單價按價目表計算，不可在消費頁修改。請重新載入消費頁。");
           return {catalogId:catalog.id,name:catalog.name,kind:catalog.kind,reward_group:catalog.reward_group,unitPrice,catalogUnitPrice:Number(catalog.price),quantity:Number(line.quantity)};
         });
         const appointment=body.appointmentId ? data.appointments.find(a=>a.id===body.appointmentId && a.member_id===member.id && ["pending","confirmed"].includes(a.status)) : null;

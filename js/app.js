@@ -218,7 +218,7 @@ function renderAdminDashboard() {
   const members = state.data.profiles.filter(item => item.role === "member");
   return `<div class="grid">
     ${api.backendMode && !api.testingMode && can(state.profile,"migration") && !members.length ? `<section class="card"><h2>先匯入原有資料</h2><p>請在原本有會員及消費資料的裝置操作；匯入前先下載完整備份。此程序不會刪除本機原資料。</p><button class="button" data-action="import-local-data">匯入原本裝置資料</button></section>` : ""}
-    ${expiryNoticeView(members, state.data.rewardWallets, new Date(), {showEmpty:true})}
+    ${expiryNoticeView(members, state.data.rewardWallets, new Date(), {showEmpty:true,canSeePhone:can(state.profile,"phone.read")})}
     <div class="grid cols-3">
       ${statCard("今日營業額", formatMoney(revenue.todayRevenue), "按已完成消費的實收金額")}
       ${statCard("本月營業額", formatMoney(revenue.currentRevenue), `${revenue.currentMonth} · 香港時間`)}
@@ -244,7 +244,7 @@ function renderAdminAppointments() {
 
 function renderMembers() {
   const members = state.data.profiles.filter(item => item.role === "member");
-  return `${expiryNoticeView(members, state.data.rewardWallets)}<section class="card"><div class="card-head"><h2>會員名單</h2><div class="actions"><span class="muted">${members.length} 位會員</span><button class="button small" data-action="new-member">＋ 新增會員</button></div></div>
+  return `${expiryNoticeView(members, state.data.rewardWallets,new Date(),{canSeePhone:can(state.profile,"phone.read")})}<section class="card"><div class="card-head"><h2>會員名單</h2><div class="actions"><span class="muted">${members.length} 位會員</span><button class="button small" data-action="new-member">＋ 新增會員</button></div></div>
     <div class="filter-bar"><input id="member-search" placeholder="🔍 搜尋電話、姓名或電郵"></div>
     <div class="table-wrap"><table><thead><tr><th>會員</th>${can(state.profile,"phone.read") ? "<th>電話</th>" : ""}<th>生日（月日）</th><th>入會年份</th><th>會員年資</th><th>印花</th><th>介紹編號</th><th>操作</th></tr></thead><tbody id="member-table-body">${members.map(memberRow).join("")}</tbody></table></div>
   </section>`;
@@ -565,7 +565,7 @@ function saleItemRow(item,index) {
   return `<div class="list-item sale-item-card ${item.justAdded ? "sale-item-new" : ""}"><div class="form-grid" style="flex:1">
     <label class="field span-2"><span>項目</span><select data-sale-catalog data-index="${index}" required>${catalogOptions(item.catalogId)}</select></label>
     <label class="field"><span>數量</span><input data-sale-field="quantity" data-index="${index}" type="number" min="1" value="${item.quantity}"></label>
-    <label class="field"><span>本次單價（可修改）</span><input data-sale-field="unitPrice" data-index="${index}" type="number" min="0" max="1000000" step="0.01" required value="${esc(item.unitPrice)}"></label>
+    <label class="field"><span>單價（按價目表）</span><input data-sale-field="unitPrice" data-index="${index}" type="number" min="0" max="1000000" step="0.01" readonly value="${esc(item.unitPrice)}"></label>
   </div>${state.saleItems.length>1?`<button class="icon-button" type="button" data-action="remove-sale-item" data-index="${index}">×</button>`:""}</div>`;
 }
 
