@@ -29,6 +29,7 @@ test('新增預約包含新客自動入會，無會員亦可提交，有穩定�
  const html=runInContext('appointmentModal()',context),id=runInContext('state.modal.requestId',context);
  assert.match(html,/新客人（預約時自動入會）/);assert.match(html,/name="newName" required/);assert.match(html,/name="newPhone"/);assert.match(html,/name="newEmail"/);assert.match(html,/id="appointment-new-customer"[^>]*hidden disabled/);
  assert.doesNotMatch(html,/type="submit" disabled/);assert.match(html,/appointment-member-phone/);
+ assert.match(html,/appointment-referrer-phone/);assert.match(html,/介紹人（選填，輸入電話搜尋）/);assert.match(html,/name="referrerId"/);
  runInContext('appointmentModal()',context);assert.equal(runInContext('state.modal.requestId',context),id);
  runInContext('state.data.stylists=[];',context);assert.match(runInContext('appointmentModal()',context),/type="submit" disabled/);
 });
@@ -48,6 +49,9 @@ test('新客預約以單一請求提交會員資料，舊會員流程保持不�
  runInContext('busy=async(button,fn)=>fn();toast=()=>{};refresh=async()=>{};api.createAppointment=async input=>{globalThis.sent=input;};',context);
  await runInContext('onAdminAppointment({preventDefault(){},currentTarget:{},submitter:{}})',context);
  assert.equal(context.sent.newMember.name,'新客人');assert.equal(context.sent.newMember.phone,'61234567');assert.equal(context.sent.newMember.birthday,'11');assert.equal(context.sent.memberId,undefined);assert.equal(context.sent.requestId,context.form.requestId);assert.equal(context.sent.note,'客人備註');
+ assert.equal(context.sent.newMember.referrerId,null);
+ context.form.referrerId='member-referrer';await runInContext('onAdminAppointment({preventDefault(){},currentTarget:{},submitter:{}})',context);assert.equal(context.sent.newMember.referrerId,'member-referrer');
+ delete context.form.referrerId;context.sent=null;await runInContext('onAdminAppointment({preventDefault(){},currentTarget:{querySelector:()=>({value:"9123"})},submitter:{}})',context);assert.equal(context.sent,null);
  context.form={customerType:'existing',memberId:'member-1',serviceId:'svc'};await runInContext('onAdminAppointment({preventDefault(){},currentTarget:{},submitter:{}})',context);assert.equal(context.sent.memberId,'member-1');assert.equal(context.sent.newMember,undefined);
 });
 

@@ -20,6 +20,36 @@ function harness(username="howood"){
 }
 
 const newCustomerBooking=(overrides={})=>({requestId:'new-booking-request-001',newMember:{name:'新客人',phone:'61234567',birthday:null,email:''},serviceId:'color',stylistId:'sty-a',date:'2026-11-20',time:'11:00',status:'confirmed',note:'預約備註',...overrides});
+test('所有管理員可在新客預約登記介紹人；預約不發印花，重試不重複關係',async()=>{
+ for(const username of ['howood','sally','admin135','admin268','admin567','admin889','admin233']){
+  const h=harness(username);h.data().catalog[0].duration_minutes=60;
+  const input=newCustomerBooking();input.newMember.referrerId='m1';
+  const response=await h.call('/actions/createAppointment',{args:[input]});assert.equal(response.status,200);const result=await response.json();
+  assert.equal(h.data().referrals.length,1);const ref=h.data().referrals[0];assert.equal(ref.referrer_id,'m1');assert.equal(ref.referred_member_id,result.memberId);assert.equal(ref.awarded_at,null);assert.equal(ref.created_by,`admin-${username}`);
+  assert.equal(h.data().rewardWallets.m1.stampProgress,0);assert.equal(h.data().stampLedger.length,0);assert.ok(h.data().auditLog.some(r=>r.action==='referral.created' && r.actor_id===ref.created_by));
+  const before=JSON.stringify(h.data());assert.deepEqual(await(await h.call('/actions/createAppointment',{args:[input]})).json(),result);assert.equal(JSON.stringify(h.data()),before);
+  assert.equal((await h.call('/actions/createAppointment',{args:[{...input,newMember:{...input.newMember,referrerId:null}}]})).status,409);assert.equal(JSON.stringify(h.data()),before);
+ }
+});
+
+test('新客預約介紹關係沿用消費規則：純產品不發，服務首次發一次',async()=>{
+ const h=harness('sally');h.data().catalog[0].duration_minutes=60;h.data().catalog.push({id:'product',kind:'product',name:'產品',price:100,active:true});
+ const input=newCustomerBooking();input.newMember.referrerId='m1';const result=await(await h.call('/actions/createAppointment',{args:[input]})).json();
+ const sale={requestId:'referral-product-sale-001',memberId:result.memberId,stylistId:'sty-a',items:[{catalogId:'product',quantity:1,unitPrice:100}]};
+ assert.equal((await h.call('/sales',sale)).status,200);assert.equal(h.data().referrals[0].awarded_at,null);assert.equal(h.data().rewardWallets.m1.stampProgress,0);
+ const service={...sale,requestId:'referral-service-sale-002',items:[{catalogId:'color',quantity:1,unitPrice:100}]};assert.equal((await h.call('/sales',service)).status,200);assert.ok(h.data().referrals[0].awarded_at);assert.equal(h.data().rewardWallets.m1.stampProgress,1);
+ assert.equal((await h.call('/sales',service)).status,200);assert.equal((await h.call('/sales',{...service,requestId:'referral-service-sale-003'})).status,200);assert.equal(h.data().rewardWallets.m1.stampProgress,1);assert.equal(h.data().stampLedger.filter(s=>s.type==='referral').length,1);
+});
+
+test('介紹人無效或預約失敗，會員、介紹關係及預約全部回滾',async()=>{
+ for(const referrerId of ['missing','disabled','admin-howood']){
+  const h=harness();h.data().catalog[0].duration_minutes=60;h.data().profiles.push({id:'disabled',role:'member',active:false},{id:'admin-howood',role:'admin',active:true});
+  const before=JSON.stringify(h.data()),input=newCustomerBooking();input.newMember.referrerId=referrerId;
+  assert.equal((await h.call('/actions/createAppointment',{args:[input]})).status,400);assert.equal(JSON.stringify(h.data()),before);
+ }
+ const h=harness();h.data().catalog[0].duration_minutes=60;const before=JSON.stringify(h.data()),input=newCustomerBooking({stylistId:'missing'});input.newMember.referrerId='m1';assert.ok((await h.call('/actions/createAppointment',{args:[input]})).status>=400);assert.equal(JSON.stringify(h.data()),before);
+});
+
 test('七個管理員新客預約原子建立會員、零起始優惠及預約，按香港建立日入會',async()=>{
  for(const username of ['howood','sally','admin135','admin268','admin567','admin889','admin233']){
   const h=harness(username);h.data().catalog[0].duration_minutes=60;

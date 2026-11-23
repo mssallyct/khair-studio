@@ -388,6 +388,7 @@ function appointmentModal() {
         <label class="field"><span>新客人姓名</span><input name="newName" required maxlength="80" autocomplete="off"></label>
         <label class="field"><span>新客人電話</span><input name="newPhone" type="tel" inputmode="tel" required maxlength="20" placeholder="香港8位電話" autocomplete="off"></label>
         <label class="field"><span>電郵（選填）</span><input name="newEmail" type="email" maxlength="254" autocomplete="off"></label>
+        ${memberPhoneLookup({name:"referrerId",inputId:"appointment-referrer-phone",label:"介紹人（選填，輸入電話搜尋）"})}
         <div class="field"><span>生日（選填，可只填月份）</span><div class="birthday-fields"><select name="birthdayMonth" id="member-birthday-month" aria-label="生日月份"><option value="">月份</option>${Array.from({length:12},(_,i)=>`<option value="${i+1}">${i+1}月</option>`).join("")}</select><select name="birthdayDay" id="member-birthday-day" aria-label="生日日期（選填）" disabled>${birthdayDayOptions("")}</select></div></div>
       </div></fieldset>` : ""}
       <label class="field"><span>服務</span><select name="serviceId" id="appointment-service" required>${services.map(item => `<option value="${item.id}" data-duration="${item.duration_minutes}">${esc(item.name)} · ${formatMoney(item.price)}</option>`).join("")}</select></label>
@@ -849,12 +850,16 @@ function updateAppointmentCustomerType(event){
 async function onAdminAppointment(event) {
   event.preventDefault(); const form=Object.fromEntries(new FormData(event.currentTarget));
   const isNew=form.customerType==="new";
+  if(isNew && event.currentTarget.querySelector?.("#appointment-referrer-phone")?.value.trim() && !form.referrerId){
+    toast("請從搜尋結果選擇介紹人，或清空介紹人電話搜尋欄。",true);
+    return;
+  }
   if (!isNew && !form.memberId) {
     toast("請輸入會員電話，並從搜尋結果選擇會員。", true);
     return;
   }
   await busy(event.submitter, async()=>{
-    const input=isNew ? {requestId:form.requestId,serviceId:form.serviceId,stylistId:form.stylistId,date:form.date,time:form.time,status:form.status,note:form.note,newMember:{name:form.newName,phone:form.newPhone,email:form.newEmail,birthday:birthdayFromParts(form.birthdayMonth,form.birthdayDay)}} : form;
+    const input=isNew ? {requestId:form.requestId,serviceId:form.serviceId,stylistId:form.stylistId,date:form.date,time:form.time,status:form.status,note:form.note,newMember:{name:form.newName,phone:form.newPhone,email:form.newEmail,birthday:birthdayFromParts(form.birthdayMonth,form.birthdayDay),referrerId:form.referrerId || null}} : form;
     await api.createAppointment(input);
     state.modal=null;
     toast(isNew ? "新客人已自動成為會員，預約已建立。" : "新預約已建立。");

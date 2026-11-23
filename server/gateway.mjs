@@ -183,13 +183,19 @@ export function createGateway({ repository, authenticate, auth, allowedOrigins =
             if(email.length>254 || email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))throw failure(400,"請填寫有效電郵或留空。");
             const booking={stylistId:input.stylistId,serviceId:input.serviceId,date:dateOnly(input.date),time:input.time,note:String(input.note || ""),status:input.status || "pending"};
             if(!["pending","confirmed"].includes(booking.status))throw failure(400,"預約狀態無效。");
-            const fingerprint=createHash("sha256").update(JSON.stringify({actor:principal.id,name,phone,birthday,email,booking})).digest("hex");
+            const referrerId=String(customer.referrerId || "").trim();
+            const fingerprint=createHash("sha256").update(JSON.stringify({actor:principal.id,name,phone,birthday,email,booking,...(referrerId ? {referrerId} : {})})).digest("hex");
             const previous=data.appointmentRequests?.[requestId];
             if(previous){if(previous.fingerprint!==fingerprint)throw failure(409,"此預約已提交，請重新載入後核對，勿重複建立。");return previous.result;}
             if(booking.date<hongKongDateKey(now))throw failure(400,"預約日期不能早於今天。");
             if(data.profiles.some(p=>normalizePhoneSearch(p.phone)===normalizePhoneSearch(phone)))throw failure(409,"此電話已有會員記錄，請改用「已有會員」搜尋及選擇，毋須重複入會。");
+            if(referrerId && !data.profiles.some(p=>p.id===referrerId && p.role==="member" && p.active!==false))throw failure(400,"請選擇有效介紹人，或留空。");
             const member={id:`member-${randomUUID()}`,name,phone,birthday,email,remarks:[],joined_date:hongKongDateKey(now),role:"member",active:true,created_at:timestamp,created_by:principal.id};
             data.profiles.push(member);(data.rewardWallets ||= {})[member.id]=createRewardWallet(member,now);
+            if(referrerId){
+              data.referrals.push({id:randomUUID(),referrer_id:referrerId,referred_member_id:member.id,awarded_at:null,created_by:principal.id,created_at:timestamp});
+              audit(data,principal,"referral.created",member.id,"新客預約登記介紹關係",timestamp);
+            }
             audit(data,principal,"member.created",member.id,"新客預約自動入會",timestamp);
             const row=await store.createAppointment({...booking,memberId:member.id});
             const result={id:row.id,memberId:member.id,memberCreated:true};
