@@ -4,7 +4,7 @@ import { createRewardWallet, dateOnly, expiryNotices, membershipYear, quoteRewar
 import { hongKongDateKey, normalizeBirthday, normalizeHongKongPhone, birthdayStampAward } from "../js/rules.js";
 import { summarizeRevenue } from "../js/revenue.js";
 import { DemoStore } from "../js/demo-store.js";
-import { findMembersByPhone } from "../js/member-search.js";
+import { findMembersByPhone, normalizePhoneSearch } from "../js/member-search.js";
 import { prepareLegacyImport, reviewedOpening } from "./migration.mjs";
 import { newAdmin } from "./admin-management.mjs";
 import { normalizeRemarks } from "../js/member-remarks.js";
@@ -173,6 +173,29 @@ export function createGateway({ repository, authenticate, auth, allowedOrigins =
           // demo login, seeding or migration ever runs in the backend.
           const store=Object.create(DemoStore.prototype);
           store.data=data;store.actor=()=>principal;store.save=()=>{};
+          if(actionName==="createAppointment" && body.args[0]?.newMember){
+            requirePermission(principal,"members.create");
+            const input=body.args[0],customer=input.newMember,requestId=String(input.requestId || "");
+            if(!/^[a-zA-Z0-9_-]{16,100}$/.test(requestId))throw failure(400,"缺少預約防重複編號。");
+            if(input.memberId || typeof customer!=="object" || Array.isArray(customer))throw failure(400,"請選擇新客人或已有會員。");
+            const name=String(customer.name || "").trim(),phone=normalizeHongKongPhone(customer.phone),birthday=normalizeBirthday(customer.birthday),email=String(customer.email || "").trim();
+            if(!name || name.length>80)throw failure(400,"請填寫有效會員姓名。");
+            if(email.length>254 || email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))throw failure(400,"請填寫有效電郵或留空。");
+            const booking={stylistId:input.stylistId,serviceId:input.serviceId,date:dateOnly(input.date),time:input.time,note:String(input.note || ""),status:input.status || "pending"};
+            if(!["pending","confirmed"].includes(booking.status))throw failure(400,"預約狀態無效。");
+            const fingerprint=createHash("sha256").update(JSON.stringify({actor:principal.id,name,phone,birthday,email,booking})).digest("hex");
+            const previous=data.appointmentRequests?.[requestId];
+            if(previous){if(previous.fingerprint!==fingerprint)throw failure(409,"此預約已提交，請重新載入後核對，勿重複建立。");return previous.result;}
+            if(booking.date<hongKongDateKey(now))throw failure(400,"預約日期不能早於今天。");
+            if(data.profiles.some(p=>normalizePhoneSearch(p.phone)===normalizePhoneSearch(phone)))throw failure(409,"此電話已有會員記錄，請改用「已有會員」搜尋及選擇，毋須重複入會。");
+            const member={id:`member-${randomUUID()}`,name,phone,birthday,email,remarks:[],joined_date:hongKongDateKey(now),role:"member",active:true,created_at:timestamp,created_by:principal.id};
+            data.profiles.push(member);(data.rewardWallets ||= {})[member.id]=createRewardWallet(member,now);
+            audit(data,principal,"member.created",member.id,"新客預約自動入會",timestamp);
+            const row=await store.createAppointment({...booking,memberId:member.id});
+            const result={id:row.id,memberId:member.id,memberCreated:true};
+            (data.appointmentRequests ||= {})[requestId]={fingerprint,result};
+            return result;
+          }
           const row=await store[actionName](...body.args);
           return {id:row.id};
         }

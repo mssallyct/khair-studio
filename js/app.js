@@ -375,19 +375,28 @@ function rewardOpeningModal(){
 }
 
 function appointmentModal() {
-  const members = state.data.profiles.filter(item => item.role === "member");
+  state.modal.requestId ||= crypto.randomUUID();
   const services = activeCatalogItems().filter(item => item.kind === "service");
   const firstService = services[0];
   return `<div class="modal-backdrop"><section class="modal"><div class="modal-head"><div><p class="eyebrow">Admin Appointment</p><h2>新增預約</h2></div><button class="icon-button" data-action="close-modal">×</button></div>
     <form id="appointment-form" class="form-grid">
-      ${memberPhoneLookup({ name: "memberId", inputId: "appointment-member-phone", label: "會員（輸入電話搜尋）", required: true })}
+      <input type="hidden" name="requestId" value="${esc(state.modal.requestId)}">
+      ${api.backendMode ? `<label class="field span-2"><span>客人類型</span><select name="customerType" id="appointment-customer-type"><option value="existing">已有會員</option><option value="new">新客人（預約時自動入會）</option></select></label>` : ""}
+      <fieldset id="appointment-existing-customer" class="span-2" style="border:0;padding:0;margin:0;min-width:0">${memberPhoneLookup({ name: "memberId", inputId: "appointment-member-phone", label: "會員（輸入電話搜尋）", required: true })}</fieldset>
+      ${api.backendMode ? `<fieldset id="appointment-new-customer" class="span-2" style="border:0;padding:0;margin:0;min-width:0" hidden disabled><div class="form-grid">
+        <p class="muted span-2">提交時同時建立會員及預約，入會日期為今天；如電話已登記，請改用已有會員搜尋。</p>
+        <label class="field"><span>新客人姓名</span><input name="newName" required maxlength="80" autocomplete="off"></label>
+        <label class="field"><span>新客人電話</span><input name="newPhone" type="tel" inputmode="tel" required maxlength="20" placeholder="香港8位電話" autocomplete="off"></label>
+        <label class="field"><span>電郵（選填）</span><input name="newEmail" type="email" maxlength="254" autocomplete="off"></label>
+        <div class="field"><span>生日（選填，可只填月份）</span><div class="birthday-fields"><select name="birthdayMonth" id="member-birthday-month" aria-label="生日月份"><option value="">月份</option>${Array.from({length:12},(_,i)=>`<option value="${i+1}">${i+1}月</option>`).join("")}</select><select name="birthdayDay" id="member-birthday-day" aria-label="生日日期（選填）" disabled>${birthdayDayOptions("")}</select></div></div>
+      </div></fieldset>` : ""}
       <label class="field"><span>服務</span><select name="serviceId" id="appointment-service" required>${services.map(item => `<option value="${item.id}" data-duration="${item.duration_minutes}">${esc(item.name)} · ${formatMoney(item.price)}</option>`).join("")}</select></label>
       <label class="field"><span>髮型師</span><select name="stylistId" required>${activeStylistItems().map(item => `<option value="${item.id}">${esc(item.name)}</option>`).join("")}</select></label>
       <label class="field"><span>日期</span><input name="date" type="date" required min="${localDate(new Date())}"></label>
       <label class="field"><span>開始時間</span><select name="time" id="appointment-time" required>${generateTimeSlots(firstService?.duration_minutes).map(time => `<option>${time}</option>`).join("")}</select></label>
       <label class="field"><span>狀態</span><select name="status"><option value="confirmed">已確認</option><option value="pending">待確認</option></select></label>
       <label class="field span-2"><span>備註（選填）</span><textarea name="note" placeholder="例如：客人要求、敏感事項"></textarea></label>
-      <button class="button primary full span-2" type="submit" ${members.length && services.length ? "" : "disabled"}>建立預約</button>
+      <button class="button primary full span-2" type="submit" ${services.length && activeStylistItems().length ? "" : "disabled"}>建立預約</button>
     </form>
   </section></div>`;
 }
@@ -648,6 +657,7 @@ function bindForms() {
     daySelect.disabled = !event.target.value;
   });
   root.querySelector("#appointment-form")?.addEventListener("submit", onAdminAppointment);
+  root.querySelector("#appointment-customer-type")?.addEventListener("change", updateAppointmentCustomerType);
   root.querySelector("#catalog-form")?.addEventListener("submit", onCatalogItem);
   root.querySelector("#stylist-form")?.addEventListener("submit", onStylist);
   root.querySelector("#assistant-form")?.addEventListener("submit", onAssistant);
@@ -829,16 +839,25 @@ async function onMemberRemarks(event){
   });
 }
 
+function updateAppointmentCustomerType(event){
+  const isNew=event.target.value==="new";
+  const existing=root.querySelector("#appointment-existing-customer"),customer=root.querySelector("#appointment-new-customer");
+  existing.hidden=isNew;existing.disabled=isNew;customer.hidden=!isNew;customer.disabled=!isNew;
+  root.querySelector('#appointment-form button[type="submit"]').textContent=isNew ? "建立會員及預約" : "建立預約";
+}
+
 async function onAdminAppointment(event) {
   event.preventDefault(); const form=Object.fromEntries(new FormData(event.currentTarget));
-  if (!form.memberId) {
+  const isNew=form.customerType==="new";
+  if (!isNew && !form.memberId) {
     toast("請輸入會員電話，並從搜尋結果選擇會員。", true);
     return;
   }
   await busy(event.submitter, async()=>{
-    await api.createAppointment(form);
+    const input=isNew ? {requestId:form.requestId,serviceId:form.serviceId,stylistId:form.stylistId,date:form.date,time:form.time,status:form.status,note:form.note,newMember:{name:form.newName,phone:form.newPhone,email:form.newEmail,birthday:birthdayFromParts(form.birthdayMonth,form.birthdayDay)}} : form;
+    await api.createAppointment(input);
     state.modal=null;
-    toast("新預約已建立。");
+    toast(isNew ? "新客人已自動成為會員，預約已建立。" : "新預約已建立。");
     await refresh();
   });
 }

@@ -19,6 +19,45 @@ function harness(username="howood"){
   return {call,data:()=>data,counts:()=>({reads,writes}),replace:value=>data=value};
 }
 
+const newCustomerBooking=(overrides={})=>({requestId:'new-booking-request-001',newMember:{name:'新客人',phone:'61234567',birthday:null,email:''},serviceId:'color',stylistId:'sty-a',date:'2026-11-20',time:'11:00',status:'confirmed',note:'預約備註',...overrides});
+test('七個管理員新客預約原子建立會員、零起始優惠及預約，按香港建立日入會',async()=>{
+ for(const username of ['howood','sally','admin135','admin268','admin567','admin889','admin233']){
+  const h=harness(username);h.data().catalog[0].duration_minutes=60;
+  const old=structuredClone(h.data().profiles[0]);
+  const input=newCustomerBooking({newMember:{name:'新客人',phone:'+852 6123 4567',birthday:'11',email:''},adminId:'admin-howood'});
+  const response=await h.call('/actions/createAppointment',{args:[input]});assert.equal(response.status,200);const result=await response.json();
+  assert.equal(result.memberCreated,true);assert.ok(!JSON.stringify(result).includes('6123'));
+  const m=h.data().profiles.find(m=>m.id===result.memberId),a=h.data().appointments.find(a=>a.id===result.id),w=h.data().rewardWallets[m.id];
+  assert.equal(m.joined_date,'2026-11-19');assert.equal(m.birthday,'11');assert.equal(m.email,'');assert.equal(m.created_by,`admin-${username}`);assert.equal(a.created_by,m.created_by);assert.equal(a.member_id,m.id);assert.equal(a.status,'confirmed');
+  assert.equal(w.stampProgress,0);assert.equal(w.hairVisits,0);assert.equal(w.coupons.length,0);assert.equal(h.data().sales.length,0);
+  assert.ok(h.data().auditLog.some(a=>a.action==='member.created' && a.actor_id===m.created_by));assert.ok(h.data().auditLog.some(a=>a.action==='appointment.created' && a.actor_id===m.created_by));assert.deepEqual(h.data().profiles[0],old);
+  const saved=JSON.stringify(h.data());assert.deepEqual(await(await h.call('/actions/createAppointment',{args:[input]})).json(),result);assert.equal(JSON.stringify(h.data()),saved);
+  assert.equal((await h.call('/actions/createAppointment',{args:[{...input,time:'12:00'}]})).status,409);assert.equal(JSON.stringify(h.data()),saved);
+ }
+});
+
+test('新客預約重複電話、無效資料及時段衝突完全不留下會員或預約',async()=>{
+ const cases=[
+  {newMember:{name:'客人',phone:'+852 9123 4567'}},
+  {newMember:{name:'客人',phone:'123'}},{newMember:{name:'',phone:'61234567'}},
+  {newMember:{name:'客人',phone:'61234567',birthday:'02-30'}},
+  {newMember:{name:'客人',phone:'61234567',email:'invalid'}},
+  {serviceId:'missing'},{stylistId:'missing'},{date:'2026-02-30'},{date:'2026-11-18'},{time:'21:00'},{status:'completed'},{requestId:''},{memberId:'m1'}
+ ];
+ for(const changes of cases){const h=harness('admin135');h.data().catalog[0].duration_minutes=60;const before=JSON.stringify(h.data());const r=await h.call('/actions/createAppointment',{args:[newCustomerBooking(changes)]});assert.ok(r.status>=400);assert.equal(JSON.stringify(h.data()),before);assert.equal(h.counts().writes,0);}
+ const h=harness('sally');h.data().catalog[0].duration_minutes=60;
+ h.data().appointments[0]={...h.data().appointments[0],stylist_id:'sty-a',start_at:'2026-11-20T11:00:00+08:00',end_at:'2026-11-20T12:00:00+08:00'};
+ const before=JSON.stringify(h.data());assert.ok((await h.call('/actions/createAppointment',{args:[newCustomerBooking()]})).status>=400);assert.equal(JSON.stringify(h.data()),before);
+ assert.equal((await h.call('/actions/createAppointment',{args:[newCustomerBooking()]},{headers:{Authorization:''}})).status,401);
+});
+
+test('並行新客預約不會重複入會或重複預約',async()=>{
+ const h=harness('admin268');h.data().catalog[0].duration_minutes=60;
+ const input=newCustomerBooking();const responses=await Promise.all([h.call('/actions/createAppointment',{args:[input]}),h.call('/actions/createAppointment',{args:[input]})]);
+ assert.ok(responses.every(r=>r.status===200));assert.deepEqual(await responses[0].json(),await responses[1].json());assert.equal(h.data().profiles.length,2);assert.equal(h.data().appointments.length,2);
+ const conflict=await h.call('/actions/createAppointment',{args:[newCustomerBooking({requestId:'other-booking-request-002',time:'12:00'})]});assert.equal(conflict.status,409);assert.equal(h.data().profiles.length,2);
+});
+
 test('無姓名到期提醒獨立開放電話，其他頁及匯出仍按原權限',async()=>{
  for(const name of ['howood','sally','admin135','admin268','admin567','admin889','admin233']){
   const h=harness(name),m=h.data().profiles[0];m.name=' ';m.joined_date='2025-11-29';h.data().rewardWallets.m1=createRewardWallet(m,now);h.data().rewardWallets.m1.stampProgress=2;

@@ -24,6 +24,33 @@ function renderContext() {
   return context;
 }
 
+test('新增預約包含新客自動入會，無會員亦可提交，有穩定防重複編號',()=>{
+ const context=renderContext();runInContext('api.backendMode=true;state.modal={type:"appointment"};state.data.profiles=[];',context);
+ const html=runInContext('appointmentModal()',context),id=runInContext('state.modal.requestId',context);
+ assert.match(html,/新客人（預約時自動入會）/);assert.match(html,/name="newName" required/);assert.match(html,/name="newPhone"/);assert.match(html,/name="newEmail"/);assert.match(html,/id="appointment-new-customer"[^>]*hidden disabled/);
+ assert.doesNotMatch(html,/type="submit" disabled/);assert.match(html,/appointment-member-phone/);
+ runInContext('appointmentModal()',context);assert.equal(runInContext('state.modal.requestId',context),id);
+ runInContext('state.data.stylists=[];',context);assert.match(runInContext('appointmentModal()',context),/type="submit" disabled/);
+});
+
+test('切換新客／已有會員只切換欄位，保留其他已填預約資料',()=>{
+ const context=renderContext();context.fields={existing:{},customer:{},submit:{}};
+ runInContext('root.querySelector=s=>s==="#appointment-existing-customer"?fields.existing:s==="#appointment-new-customer"?fields.customer:fields.submit;',context);
+ runInContext('updateAppointmentCustomerType({target:{value:"new"}})',context);
+ assert.equal(context.fields.existing.disabled,true);assert.equal(context.fields.customer.disabled,false);assert.equal(context.fields.submit.textContent,'建立會員及預約');
+ runInContext('updateAppointmentCustomerType({target:{value:"existing"}})',context);
+ assert.equal(context.fields.existing.disabled,false);assert.equal(context.fields.customer.disabled,true);assert.equal(context.fields.submit.textContent,'建立預約');
+});
+
+test('新客預約以單一請求提交會員資料，舊會員流程保持不變',async()=>{
+ const context=renderContext();context.form={customerType:'new',requestId:'request-appointment-001',newName:'新客人',newPhone:'61234567',newEmail:'',birthdayMonth:'11',birthdayDay:'',serviceId:'svc',stylistId:'sty-a',date:'2026-11-25',time:'12:00',status:'confirmed',note:'客人備註'};
+ context.FormData=class {constructor(){return Object.entries(context.form);}};
+ runInContext('busy=async(button,fn)=>fn();toast=()=>{};refresh=async()=>{};api.createAppointment=async input=>{globalThis.sent=input;};',context);
+ await runInContext('onAdminAppointment({preventDefault(){},currentTarget:{},submitter:{}})',context);
+ assert.equal(context.sent.newMember.name,'新客人');assert.equal(context.sent.newMember.phone,'61234567');assert.equal(context.sent.newMember.birthday,'11');assert.equal(context.sent.memberId,undefined);assert.equal(context.sent.requestId,context.form.requestId);assert.equal(context.sent.note,'客人備註');
+ context.form={customerType:'existing',memberId:'member-1',serviceId:'svc'};await runInContext('onAdminAppointment({preventDefault(){},currentTarget:{},submitter:{}})',context);assert.equal(context.sent.memberId,'member-1');assert.equal(context.sent.newMember,undefined);
+});
+
 test('備註在會員底部，逐點顯示、轉義及可新增／確認刪除',()=>{
   const context=renderContext();
   runInContext('api.backendMode=true;state.selectedMemberId="member-1";state.data.profiles[0].remarks=["第一點 <script>alert(1)</script>","第二點"];',context);

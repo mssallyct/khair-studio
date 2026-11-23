@@ -17,6 +17,7 @@ gateway=gateway.replace('import { importMemberRows } from "./member-import.mjs";
 gateway=gateway.replace('import { randomUUID, createHash } from "node:crypto";',`const randomUUID=()=>crypto.randomUUID();\nasync function digest(value){return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(value))),b=>b.toString(16).padStart(2,'0')).join('');}`);
 const before=gateway;
 gateway=gateway.replace(/createHash\("sha256"\)\.update\((JSON\.stringify\(\[body\.memberId[^\n]+?\]\))\)\.digest\("hex"\)/,'await digest($1)');
+gateway=gateway.replace(/createHash\("sha256"\)\.update\((JSON\.stringify\(\{actor:[^\n]+?\}\))\)\.digest\("hex"\)/,'await digest($1)');
 if(gateway===before||gateway.includes('node:')||gateway.includes('createHash'))throw new Error('Sandbox gateway conversion failed');
 await writeFile(join(test,'server/gateway.mjs'),gateway);
 const migration=await readFile(join(root,'server/migration.mjs'),'utf8');
