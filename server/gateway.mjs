@@ -277,10 +277,17 @@ function exportFor(principal,data) {
 }
 
 function expiryNoticesFor(principal,data,now){
-  return expiryNotices(data.profiles.filter(p=>p.role==="member"),data.rewardWallets || {},now).map(n=>({
-    memberId:n.memberId,displayName:n.name ? privateText(principal,n.name) : String(n.phone || "").trim() || "未填姓名會員",
-    daysRemaining:n.daysRemaining,expiresAt:n.expiresAt,stampProgress:n.stampProgress
-  }));
+  return expiryNotices(data.profiles.filter(p=>p.role==="member"),data.rewardWallets || {},now).map(n=>{
+    // Legacy members may have their phone stored as the name. Treat only a
+    // whole phone-number name as unnamed; never unmask arbitrary name text.
+    const phoneName=/^(?:\+?852[\s()-]*)?[2-9](?:[\s()-]*\d){7}$/.test(n.name.normalize("NFKC"));
+    const unnamed=!n.name || phoneName;
+    const contact=String(n.phone || (phoneName ? n.name : "")).trim();
+    return {
+      memberId:n.memberId,displayName:unnamed ? `未填姓名會員${contact ? ` · ${contact}` : ""}` : privateText(principal,n.name),
+      daysRemaining:n.daysRemaining,expiresAt:n.expiresAt,stampProgress:n.stampProgress
+    };
+  });
 }
 
 const ACTIONS=Object.freeze({createAppointment:"appointments.write",updateAppointmentStatus:"appointments.write",cancelAppointment:"appointments.write",createCatalogItem:"catalog.write",updateCatalogItem:"catalog.write",deleteCatalogItem:"catalog.write",createStylist:"team.write",deleteStylist:"team.write",createAssistant:"team.write",deleteAssistant:"team.write",adjustStamps:"stamps.adjust"});

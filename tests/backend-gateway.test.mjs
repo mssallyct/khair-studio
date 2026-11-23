@@ -23,8 +23,8 @@ test('無姓名到期提醒獨立開放電話，其他頁及匯出仍按原權�
  for(const name of ['howood','sally','admin135','admin268','admin567','admin889','admin233']){
   const h=harness(name),m=h.data().profiles[0];m.name=' ';m.joined_date='2025-11-29';h.data().rewardWallets.m1=createRewardWallet(m,now);h.data().rewardWallets.m1.stampProgress=2;
   const before=JSON.stringify(h.data()),home=await(await h.call('/home')).json();
-  const notices=await(await h.call('/expiry-notices')).json();assert.equal(notices[0].displayName,'9123 4567');assert.equal(Object.hasOwn(notices[0],'phone'),false);
-  if(['howood','sally'].includes(name))assert.equal(home.expiry[0].displayName,'9123 4567');else assert.equal(home.expiry,undefined);
+  const notices=await(await h.call('/expiry-notices')).json();assert.equal(notices[0].displayName,'未填姓名會員 · 9123 4567');assert.equal(Object.hasOwn(notices[0],'phone'),false);
+  if(['howood','sally'].includes(name))assert.equal(home.expiry[0].displayName,'未填姓名會員 · 9123 4567');else assert.equal(home.expiry,undefined);
   assert.equal((await(await h.call('/members')).text()).includes('9123'),name==='howood');
   assert.equal((await(await h.call('/members/search',{query:'91234567'})).text()).includes('9123'),name==='howood');
   if(['howood','sally'].includes(name))assert.equal((await(await h.call('/export')).text()).includes('9123'),name==='howood');
@@ -38,6 +38,23 @@ test('提醒不能查到非到期會員電話，具姓名者不附電話，資�
  assert.deepEqual(await(await h.call('/expiry-notices?memberId=m1')).json(),[]);
  m.joined_date='2025-11-29';h.data().rewardWallets.m1=createRewardWallet(m,now);h.data().rewardWallets.m1.stampProgress=2;m.name='有姓名';
  const notices=await(await h.call('/expiry-notices')).json();assert.equal(notices[0].displayName,'有姓名');assert.ok(!JSON.stringify(notices).includes('9123'));
+});
+
+test('所有管理員到期提醒識別舊電話姓名；其他回覆及原始資料不變',async()=>{
+ for(const username of ['howood','sally','admin135','admin268','admin567','admin889','admin233']){
+  const h=harness(username),m=h.data().profiles[0];m.joined_date='2025-11-29';h.data().rewardWallets.m1=createRewardWallet(m,now);h.data().rewardWallets.m1.stampProgress=2;
+  for(const name of ['91234567','9123 4567','+852 9123-4567','９１２３４５６７']){
+   m.name=name;const before=JSON.stringify(h.data());
+   const notices=await(await h.call('/query/expiry-notices',{})).json();assert.equal(notices[0].displayName,'未填姓名會員 · 9123 4567');
+   const home=await(await h.call('/home')).json();if(['howood','sally'].includes(username))assert.deepEqual(home.expiry,notices);else assert.equal(home.expiry,undefined);
+   const members=await(await h.call('/members')).json();assert.equal(Object.hasOwn(members[0],'phone'),username==='howood');
+   if(username!=='howood' && name!=='９１２３４５６７')assert.equal(members[0].name,'[電話已隱藏]');
+   assert.equal(JSON.stringify(h.data()),before);assert.equal(h.counts().writes,0);
+  }
+  m.name='會員A 91234567';assert.equal((await(await h.call('/expiry-notices')).json())[0].displayName,username==='howood' ? m.name : '會員A [電話已隱藏]');
+  m.name='91234567';m.phone='';assert.equal((await(await h.call('/expiry-notices')).json())[0].displayName,'未填姓名會員 · 91234567');
+  m.name='';assert.equal((await(await h.call('/expiry-notices')).json())[0].displayName,'未填姓名會員');
+ }
 });
 
 test('backend stores month-only and full birthdays without inventing or rewriting old dates',async()=>{
