@@ -104,12 +104,12 @@ export function createGateway({ repository, authenticate, auth, allowedOrigins =
         if (path === "/home") {
           const appointment = row => ({id:row.id,memberId:row.member_id,memberName:privateText(principal,data.profiles.find(p=>p.id===row.member_id)?.name),startAt:row.start_at,status:row.status,serviceId:row.service_id,stylistId:row.stylist_id,note:privateText(principal,row.note)});
           result = {pending:data.appointments.filter(a=>a.status==="pending").map(appointment),today:data.appointments.filter(a=>hongKongDateKey(a.start_at)===hongKongDateKey(now)).map(appointment)};
-          if (can(principal,"revenue")) Object.assign(result,{revenue:summarizeRevenue(data.sales,now),expiry:expiryNotices(data.profiles.filter(p=>p.role==="member"),data.rewardWallets || {},now)});
+          if (can(principal,"revenue")) result.revenue=summarizeRevenue(data.sales,now);
         }
         if (path === "/export") result = exportFor(principal,data);
         if (path === "/workspace") result = {paged:true,revision:String(data.__revision || "0"),collections:RECORD_COLLECTIONS.filter(name=>name!=="auditLog" || can(principal,"audit"))};
         const protectedResult=protectOutput(principal,result);
-        if(path==="/home" && can(principal,"revenue"))protectedResult.expiry=expiryNoticesFor(principal,data,now);
+        if(path==="/home")protectedResult.expiry=expiryNoticesFor(principal,data,now);
         return reply(200,protectedResult,headers);
       }
       if (request.method !== "POST") throw failure(405,"不支援此操作。");

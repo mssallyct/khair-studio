@@ -61,12 +61,18 @@ test('確認消費只顯示實際優惠；零減免及沒有折扣不顯示',()=
   const html=runInContext('saleDiscountRows(receipt,false)',context);assert.match(html,/4印花優惠/);assert.doesNotMatch(html,/只限產品95折減免/);
 });
 
-test('主管首頁固定保留到期通知空狀態，五個Admin首頁維持兩區',()=>{
+test('所有管理員營運總覽置頂到期通知及空狀態，其他權限不變',()=>{
   const context=renderContext();
   for(const username of ['howood','sally','admin135','admin268','admin567','admin889','admin233']){
     context.username=username;runInContext('state.profile.username=username;',context);
     const html=runInContext('renderAdminDashboard()',context),owner=['howood','sally'].includes(username);
-    assert.equal(html.includes('14天內印花到期'),owner);assert.equal(html.includes('暫時沒有14天內到期'),owner);
+    assert.equal(html.includes('14天內印花到期'),true);assert.equal(html.includes('暫時沒有14天內到期'),true);
+    assert.ok(html.indexOf('14天內印花到期')<html.indexOf('待確認預約'));
+    assert.equal(html.includes('營業額'),owner);assert.equal(html.includes('匯出 Excel'),owner);
+    runInContext('state.expiryNoticeRows=[{memberId:"member-1",displayName:"未填姓名會員 · 9123 4567",daysRemaining:3,expiresAt:"2026-11-26T00:00:00+08:00",stampProgress:2}];',context);
+    const populated=runInContext('renderAdminDashboard()',context);
+    assert.match(populated,/未填姓名會員 · 9123 4567/);assert.match(populated,/data-member="member-1"/);assert.match(populated,/今日行程/);
+    runInContext('state.expiryNoticeRows=null;',context);
   }
 });
 
@@ -166,13 +172,13 @@ test("新增會員生日只有月日選單，二月可選29日而不可選30日"
   assert.doesNotMatch(runInContext('birthdayDayOptions("4")', context), /value="31"/);
 });
 
-test("五個新管理員首頁只保留待確認及今日行程，不能直入設定或操作記錄",()=>{
+test("五個管理員首頁有到期提醒、待確認及今日行程，不能直入設定或操作記錄",()=>{
   const context=renderContext();
   for(const username of ["admin135","admin268","admin567","admin889","admin233"]){
     context.username=username;runInContext('state.profile={id:username,username,name:username,role:"admin",active:true};',context);
     const home=runInContext("renderAdminDashboard()",context);
-    for(const title of ["待確認預約","今日行程"])assert.ok(home.includes(title));
-    for(const title of ["營業額","會員人數","本月消費","印花到期"])assert.ok(!home.includes(title));
+    for(const title of ["待確認預約","今日行程","14天內印花到期"])assert.ok(home.includes(title));
+    for(const title of ["營業額","會員人數","本月消費"])assert.ok(!home.includes(title));
     for(const fn of ["renderSettings()","renderAuditLog()"]){assert.match(runInContext(fn,context),/沒有此頁面權限/);}
     const app=runInContext("renderApp()",context);assert.doesNotMatch(app,/data-view="(?:settings|audit)"|data-action="export-data"/);
   }

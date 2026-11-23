@@ -38,7 +38,7 @@ test('Howood creates dynamic admin, login is DB-backed, disable revokes sessions
   const login=await h.auth.login(new Request('https://test.invalid'),{username:'NEW_STYLIST',password});
   assert.equal(login.profile.id,id);assert.equal(can(login.profile,'members'),true);
   for(const permission of ['admins','admins.manage','phone.read','settings','audit','revenue','export'])assert.equal(can(login.profile,permission),false);
-  assert.deepEqual(homeSections(login.profile),['pending','today']);
+  assert.deepEqual(homeSections(login.profile),['pending','today','expiry']);
   const req=new Request('https://test.invalid',{headers:{Authorization:'Bearer '+login.accessToken}});
   assert.equal((await h.auth.authenticate(req)).id,id);
   const list=await(await h.call('/query/admins')).text();assert.ok(!list.includes('scrypt$'));assert.ok(!list.includes(password));

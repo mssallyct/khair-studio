@@ -217,12 +217,13 @@ function renderAdminDashboard() {
   const today = localDate(new Date());
   const todayAppointments = state.data.appointments.filter(item => localDate(new Date(item.start_at)) === today);
   const pending = state.data.appointments.filter(item => item.status === "pending");
-  if (!can(state.profile,"revenue")) return `<div class="grid cols-2"><section class="card"><div class="card-head"><h2>待確認預約</h2></div>${adminAppointmentList(pending)}</section><section class="card"><div class="card-head"><h2>今日行程</h2><span>11:00–21:00</span></div>${adminAppointmentList(todayAppointments.sort((a,b)=>new Date(a.start_at)-new Date(b.start_at)))}</section></div>`;
-  const revenue = summarizeRevenue(state.data.sales);
   const members = state.data.profiles.filter(item => item.role === "member");
+  const expiry = expiryNoticeView(members, state.data.rewardWallets, new Date(), {showEmpty:true,canSeePhone:can(state.profile,"phone.read"),noticeRows:state.expiryNoticeRows});
+  if (!can(state.profile,"revenue")) return `<div class="grid">${expiry}<div class="grid cols-2"><section class="card"><div class="card-head"><h2>待確認預約</h2></div>${adminAppointmentList(pending)}</section><section class="card"><div class="card-head"><h2>今日行程</h2><span>11:00–21:00</span></div>${adminAppointmentList(todayAppointments.sort((a,b)=>new Date(a.start_at)-new Date(b.start_at)))}</section></div></div>`;
+  const revenue = summarizeRevenue(state.data.sales);
   return `<div class="grid">
     ${api.backendMode && !api.testingMode && can(state.profile,"migration") && !members.length ? `<section class="card"><h2>先匯入原有資料</h2><p>請在原本有會員及消費資料的裝置操作；匯入前先下載完整備份。此程序不會刪除本機原資料。</p><button class="button" data-action="import-local-data">匯入原本裝置資料</button></section>` : ""}
-    ${expiryNoticeView(members, state.data.rewardWallets, new Date(), {showEmpty:true,canSeePhone:can(state.profile,"phone.read"),noticeRows:state.expiryNoticeRows})}
+    ${expiry}
     <div class="grid cols-3">
       ${statCard("今日營業額", formatMoney(revenue.todayRevenue), "按已完成消費的實收金額")}
       ${statCard("本月營業額", formatMoney(revenue.currentRevenue), `${revenue.currentMonth} · 香港時間`)}

@@ -35,7 +35,7 @@ export function visibleViews(principal) {
 
 export function homeSections(principal) {
   if (!can(principal, "dashboard")) return [];
-  return can(principal, "revenue") ? ["revenue", "pending", "today", "expiry"] : ["pending", "today"];
+  return can(principal, "revenue") ? ["revenue", "pending", "today", "expiry"] : ["pending", "today", "expiry"];
 }
 
 const MEMBER_FIELDS = ["id", "role", "active", "name", "email", "birthday", "referral_code", "joined_date", "created_at", "created_by", "remarks", "remarks_version", "import_opening", "import_source"];
