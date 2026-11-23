@@ -73,7 +73,7 @@ function currentWallet(wallet, at) {
 export function rewardStatus(wallet, at = new Date()) {
   const { next, period } = currentWallet(wallet, at);
   const available = next.coupons.filter(c => !c.usedAt && !c.expired);
-  return { stampProgress: next.stampProgress, hairVisits: next.hairVisits, available, period, expiring: period.daysRemaining <= 14 && (next.stampProgress > 0 || available.some(c => c.kind !== "hair10")) };
+  return { stampProgress: next.stampProgress, hairVisits: next.hairVisits, available, period, expiring: period.daysRemaining <= 30 && (next.stampProgress > 0 || available.some(c => c.kind !== "hair10")) };
 }
 
 export function saleUnitPrice(value) {

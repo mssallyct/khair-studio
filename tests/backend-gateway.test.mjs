@@ -20,6 +20,18 @@ function harness(username="howood"){
 }
 
 const newCustomerBooking=(overrides={})=>({requestId:'new-booking-request-001',newMember:{name:'新客人',phone:'61234567',birthday:null,email:''},serviceId:'color',stylistId:'sty-a',date:'2026-11-20',time:'11:00',status:'confirmed',note:'預約備註',...overrides});
+test('所有管理員到期提醒包含第15至30天，但不包含第31天，電話仍只在提醒開放',async()=>{
+ for(const username of ['howood','sally','admin135','admin268','admin567','admin889','admin233']){
+  const h=harness(username),m=h.data().profiles[0];m.name='';
+  for(const [joined,days,included] of [['2025-12-04',15,true],['2025-12-19',30,true],['2025-12-20',31,false]]){
+   m.joined_date=joined;h.data().rewardWallets.m1=createRewardWallet(m,now);h.data().rewardWallets.m1.stampProgress=2;const before=JSON.stringify(h.data());
+   const notices=await(await h.call('/expiry-notices')).json();assert.equal(notices.length,included?1:0);
+   if(included){assert.equal(notices[0].daysRemaining,days);assert.equal(notices[0].displayName,'未填姓名會員 · 9123 4567');}
+   assert.deepEqual((await(await h.call('/home')).json()).expiry,notices);
+   assert.equal((await(await h.call('/members')).text()).includes('9123'),username==='howood');assert.equal(JSON.stringify(h.data()),before);
+  }
+ }
+});
 test('所有管理員可在新客預約登記介紹人；預約不發印花，重試不重複關係',async()=>{
  for(const username of ['howood','sally','admin135','admin268','admin567','admin889','admin233']){
   const h=harness(username);h.data().catalog[0].duration_minutes=60;

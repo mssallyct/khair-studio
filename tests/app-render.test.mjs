@@ -97,8 +97,8 @@ test('所有管理員營運總覽置頂到期通知及空狀態，其他權限�
   for(const username of ['howood','sally','admin135','admin268','admin567','admin889','admin233']){
     context.username=username;runInContext('state.profile.username=username;',context);
     const html=runInContext('renderAdminDashboard()',context),owner=['howood','sally'].includes(username);
-    assert.equal(html.includes('14天內印花到期'),true);assert.equal(html.includes('暫時沒有14天內到期'),true);
-    assert.ok(html.indexOf('14天內印花到期')<html.indexOf('待確認預約'));
+    assert.equal(html.includes('30天內印花到期'),true);assert.equal(html.includes('暫時沒有30天內到期'),true);
+    assert.ok(html.indexOf('30天內印花到期')<html.indexOf('待確認預約'));
     assert.equal(html.includes('營業額'),owner);assert.equal(html.includes('匯出 Excel'),owner);
     runInContext('state.expiryNoticeRows=[{memberId:"member-1",displayName:"未填姓名會員 · 9123 4567",daysRemaining:3,expiresAt:"2026-11-26T00:00:00+08:00",stampProgress:2}];',context);
     const populated=runInContext('renderAdminDashboard()',context);
@@ -208,7 +208,7 @@ test("五個管理員首頁有到期提醒、待確認及今日行程，不能�
   for(const username of ["admin135","admin268","admin567","admin889","admin233"]){
     context.username=username;runInContext('state.profile={id:username,username,name:username,role:"admin",active:true};',context);
     const home=runInContext("renderAdminDashboard()",context);
-    for(const title of ["待確認預約","今日行程","14天內印花到期"])assert.ok(home.includes(title));
+    for(const title of ["待確認預約","今日行程","30天內印花到期"])assert.ok(home.includes(title));
     for(const title of ["營業額","會員人數","本月消費"])assert.ok(!home.includes(title));
     for(const fn of ["renderSettings()","renderAuditLog()"]){assert.match(runInContext(fn,context),/沒有此頁面權限/);}
     const app=runInContext("renderApp()",context);assert.doesNotMatch(app,/data-view="(?:settings|audit)"|data-action="export-data"/);
@@ -260,7 +260,7 @@ test("後端剪吹第10次顯示9折而零印花，重畫不多加次數",()=>{
   runInContext("saleModal()",context);assert.equal(wallet.hairVisits,9);
 });
 
-test("會員頁和主管首頁顯示14天到期提示，但員工首頁仍僅兩區",()=>{
+test("會員頁及營運總覽顯示30天到期提示",()=>{
   const context=renderContext();
   const now=new Date(),today=rules.hongKongDateKey(now);const year=Number(today.slice(0,4));
   const due=new Date(`${today}T00:00:00Z`);due.setUTCDate(due.getUTCDate()+10);

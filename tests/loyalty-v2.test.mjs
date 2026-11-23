@@ -86,12 +86,15 @@ test("印花券不可用於淨產品或淨剪吹；剪吹券不可用於純其�
   assert.throws(()=>quote(q.wallet,[service()],"later",{couponId:hair10.id}),/不適用/);
 });
 
-test("香港入會周年一年到期、14天提示、周年自動新年度；剪吹計數不受印花年度影響",()=>{
+test("香港入會周年一年到期、30天提示、周年自動新年度；剪吹計數不受印花年度影響",()=>{
   const m={...member,joined_date:"2026-12-01"},date=new Date("2027-11-17T04:00:00Z");
   let wallet=createRewardWallet(m,date);wallet.stampProgress=3;wallet.hairVisits=9;
   wallet=quoteRewards({wallet,items:[hair(),service()],saleId:"ending",at:date}).wallet;
   assert.equal(rewardStatus(wallet,date).expiring,true);
-  assert.equal(rewardStatus(wallet,new Date("2027-11-16T04:00:00Z")).expiring,false);
+  assert.equal(rewardStatus(wallet,new Date("2027-11-16T04:00:00Z")).expiring,true);
+  assert.equal(rewardStatus(wallet,new Date("2027-11-01T04:00:00Z")).period.daysRemaining,30);
+  assert.equal(rewardStatus(wallet,new Date("2027-11-01T04:00:00Z")).expiring,true);
+  assert.equal(rewardStatus(wallet,new Date("2027-10-31T04:00:00Z")).expiring,false);
   assert.equal(expiryNotices([m],{m1:wallet},date).length,1);
   const before=JSON.stringify(wallet);
   const after=rewardStatus(wallet,new Date("2027-11-30T16:00:00Z"));
