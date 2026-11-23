@@ -38,7 +38,8 @@ test("後端前端client完整讀取／消費流程；讀取使用POST，舊SW�
     const client=new BackendApi({backendUrl:"https://backend.test/api"});assert.equal(await client.getSession(),null);
     await client.signIn("sally","unused-synthetic");assert.equal((await client.getProfile()).username,"sally");
     const workspace=await client.getAdminDashboard();assert.equal(Object.hasOwn(workspace.profiles[0],"phone"),false);
-    const r=await client.completeSale({requestId:"stable-checkout-123",memberId:"m1",stylistId:"sty",items:[{catalogId:"svc",quantity:1,unitPrice:500,name:"fake"}],expectedFinalAmount:600});assert.equal(r.receipt.finalAmount,600);assert.equal(data.saleItems[0].unit_price,600);assert.equal(data.saleItems[0].name,'染髮');assert.equal(data.catalog[0].price,600);
+    const r=await client.completeSale({requestId:"stable-checkout-123",memberId:"m1",stylistId:"sty",items:[{catalogId:"svc",quantity:1,unitPrice:500,name:"fake"}],expectedFinalAmount:500});assert.equal(r.receipt.finalAmount,500);assert.equal(data.saleItems[0].unit_price,500);assert.equal(data.saleItems[0].name,'染髮');assert.equal(data.catalog[0].price,600);
+    assert.ok(Array.isArray(await client.getExpiryNotices()));
     assert.ok(requests.every(r=>r.options.method==="POST"));assert.ok(requests.every(r=>r.options.cache==="no-store"));
     globalThis.fetch=async()=>{throw new Error("offline");};await assert.rejects(()=>client.getAdminDashboard(),/offline/);assert.equal(client.demoMode,false);
   }finally{globalThis.fetch=originalFetch;}

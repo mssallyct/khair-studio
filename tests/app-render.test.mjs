@@ -178,7 +178,7 @@ test("五個新管理員首頁只保留待確認及今日行程，不能直入�
   }
 });
 
-test("後端結帳畫面即時使用第4印優惠，進度不扣走，單價按價目表不可改",()=>{
+test("後端結帳畫面即時使用第4印優惠，進度不扣走，單價可修改",()=>{
   const context=renderContext(),now=new Date();
   const member={id:"member-1",role:"member",name:"測試會員",joined_date:rules.hongKongDateKey(now)};
   const wallet=createRewardWallet(member,now);wallet.stampProgress=3;
@@ -188,10 +188,29 @@ test("後端結帳畫面即時使用第4印優惠，進度不扣走，單價按�
   const id=runInContext("backendSaleQuote(null).addedCoupons[0].id",context);context.coupon=id;
   runInContext("state.modal.couponId=coupon;",context);
   const html=runInContext("saleModal()",context);
-  assert.ok(html.includes(rules.formatMoney(540)));assert.match(html,/本輪印花進度<\/span><strong>4／8/);assert.match(html,/data-sale-field="unitPrice"[^>]+readonly/);assert.match(html,/單價（按價目表）/);assert.doesNotMatch(html,/本次單價（可修改）/);
+  assert.ok(html.includes(rules.formatMoney(540)));assert.match(html,/本輪印花進度<\/span><strong>4／8/);assert.doesNotMatch(html,/data-sale-field="unitPrice"[^>]+readonly/);assert.match(html,/本次單價（可修改）/);
   assert.equal(wallet.stampProgress,3);assert.equal(Object.keys(wallet.receipts).length,0);
   runInContext('state.modal.couponId="expired";',context);assert.match(runInContext("saleModal()",context),/原優惠不適用，請重新選擇/);
   runInContext("state.modal.couponId=null;",context);assert.doesNotMatch(runInContext("saleModal()",context),/原優惠不適用/);
+});
+
+test('輸入單價即時重算，不重建輸入框；空白禁止結帳，再輸入可繼續',()=>{
+ const context=renderContext(),now=new Date();context.wallet=createRewardWallet({id:'member-1',joined_date:rules.hongKongDateKey(now)},now);context.financials={innerHTML:''};
+ runInContext('api.backendMode=true;state.data.rewardWallets={"member-1":wallet};state.modal.requestId="live-price-input-test";state.modal.couponId=null;root.querySelector=selector=>selector==="#sale-financials"?financials:null;root.innerHTML="input preserved";',context);
+ for(const [value,total] of [['800',800],['500.5',500.5]]){
+  context.value=value;runInContext('updateSaleItem({target:{dataset:{index:"0",saleField:"unitPrice"},value}})',context);
+  assert.equal(runInContext('backendSaleQuote().receipt.finalAmount',context),total);assert.match(financialsHtml(context),/實收/);assert.equal(runInContext('root.innerHTML',context),'input preserved');
+ }
+ runInContext('updateSaleItem({target:{dataset:{index:"0",saleField:"unitPrice"},value:""}})',context);assert.match(financialsHtml(context),/type="submit" disabled/);
+ runInContext('setSaleItemInput({dataset:{index:"0",saleField:"unitPrice"},value:"700"})',context);assert.equal(runInContext('backendSaleQuote().receipt.finalAmount',context),700);
+});
+function financialsHtml(context){return runInContext('financials.innerHTML',context);}
+
+test('其他管理員電話只出現於到期通知，不滲入會員列或個人資料',()=>{
+ const context=renderContext();
+ runInContext('api.backendMode=true;state.profile.username="sally";state.data.profiles[0].name="";state.expiryNoticeRows=[{memberId:"member-1",displayName:"9123 4567",daysRemaining:10,expiresAt:"2026-12-03T00:00:00+08:00",stampProgress:2}];',context);
+ const list=runInContext('renderMembers()',context);assert.match(list,/9123 4567/);assert.doesNotMatch(runInContext('memberRow(state.data.profiles[0])',context),/9123|4567|<th>電話/);
+ runInContext('state.selectedMemberId="member-1";',context);assert.doesNotMatch(runInContext('renderMemberDetail()',context),/9123|4567/);
 });
 
 test("後端剪吹第10次顯示9折而零印花，重畫不多加次數",()=>{

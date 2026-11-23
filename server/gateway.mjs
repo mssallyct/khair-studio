@@ -78,10 +78,13 @@ export function createGateway({ repository, authenticate, auth, allowedOrigins =
       if (request.method === "GET" || readPost) {
         if (path === "/session") return reply(200, {id:principal.id,username:principal.username,name:principal.name,role:"admin",active:true}, headers);
         const collection=requestUrl.searchParams.get("collection");
-        const permission = path==="/records" ? collection==="auditLog"?"audit":"dashboard" : ({"/home":"dashboard","/workspace":"dashboard","/members":"members","/catalog":"catalog.read","/settings":"settings","/audit":"audit","/export":"export"})[path];
+        const permission = path==="/records" ? collection==="auditLog"?"audit":"dashboard" : ({"/home":"dashboard","/workspace":"dashboard","/members":"members","/expiry-notices":"members","/catalog":"catalog.read","/settings":"settings","/audit":"audit","/export":"export"})[path];
         if (!permission) throw failure(404,"找不到此功能。");
         requirePermission(principal,permission);
         const data = await repository.read();
+        // Narrow phone exception: only anonymous members currently expiring,
+        // only the notice display label. All other projections stay private.
+        if(path==="/expiry-notices")return reply(200,expiryNoticesFor(principal,data,now),headers);
         let result;
         if(path==="/records"){
           if(!RECORD_COLLECTIONS.includes(collection))throw failure(404,"找不到資料類別。");
@@ -105,7 +108,9 @@ export function createGateway({ repository, authenticate, auth, allowedOrigins =
         }
         if (path === "/export") result = exportFor(principal,data);
         if (path === "/workspace") result = {paged:true,revision:String(data.__revision || "0"),collections:RECORD_COLLECTIONS.filter(name=>name!=="auditLog" || can(principal,"audit"))};
-        return reply(200,protectOutput(principal,result),headers);
+        const protectedResult=protectOutput(principal,result);
+        if(path==="/home" && can(principal,"revenue"))protectedResult.expiry=expiryNoticesFor(principal,data,now);
+        return reply(200,protectedResult,headers);
       }
       if (request.method !== "POST") throw failure(405,"不支援此操作。");
       const actionName=path.startsWith("/actions/") ? path.slice(9) : null;
@@ -223,8 +228,7 @@ export function createGateway({ repository, authenticate, auth, allowedOrigins =
         const items = body.items.map(line=>{
           const catalog = data.catalog.find(c=>c.id===line.catalogId && c.active!==false);
           if (!catalog) throw failure(400,"請選擇現行項目。");
-          const unitPrice=saleUnitPrice(catalog.price);
-          if(Object.hasOwn(line,"unitPrice") && saleUnitPrice(line.unitPrice)!==unitPrice)throw failure(400,"單價按價目表計算，不可在消費頁修改。請重新載入消費頁。");
+          const unitPrice=saleUnitPrice(Object.hasOwn(line,"unitPrice")?line.unitPrice:catalog.price);
           return {catalogId:catalog.id,name:catalog.name,kind:catalog.kind,reward_group:catalog.reward_group,unitPrice,catalogUnitPrice:Number(catalog.price),quantity:Number(line.quantity)};
         });
         const appointment=body.appointmentId ? data.appointments.find(a=>a.id===body.appointmentId && a.member_id===member.id && ["pending","confirmed"].includes(a.status)) : null;
@@ -270,6 +274,13 @@ function exportFor(principal,data) {
   requirePermission(principal,"export");
   // Explicit collection allowlist: never serialize session/credential tables.
   return workspaceFor(principal,data);
+}
+
+function expiryNoticesFor(principal,data,now){
+  return expiryNotices(data.profiles.filter(p=>p.role==="member"),data.rewardWallets || {},now).map(n=>({
+    memberId:n.memberId,displayName:n.name ? privateText(principal,n.name) : String(n.phone || "").trim() || "未填姓名會員",
+    daysRemaining:n.daysRemaining,expiresAt:n.expiresAt,stampProgress:n.stampProgress
+  }));
 }
 
 const ACTIONS=Object.freeze({createAppointment:"appointments.write",updateAppointmentStatus:"appointments.write",cancelAppointment:"appointments.write",createCatalogItem:"catalog.write",updateCatalogItem:"catalog.write",deleteCatalogItem:"catalog.write",createStylist:"team.write",deleteStylist:"team.write",createAssistant:"team.write",deleteAssistant:"team.write",adjustStamps:"stamps.adjust"});

@@ -18,6 +18,7 @@ const state = {
   session: null,
   profile: null,
   data: null,
+  expiryNoticeRows: null,
   adminAccounts: [],
   view: "dashboard",
   loading: false,
@@ -51,10 +52,12 @@ async function boot() {
 }
 
 async function refresh() {
+  state.expiryNoticeRows=null;
   if (!state.profile) { state.data = null; render(); return; }
   state.loading = true; render();
   try {
     state.data = state.profile.role === "admin" ? displayDataFor(state.profile, await api.getAdminDashboard()) : await api.getMemberDashboard(state.profile.id);
+    if(api.backendMode)state.expiryNoticeRows=await api.getExpiryNotices();
     state.adminAccounts = api.backendMode && !api.testingMode && can(state.profile,"admins.manage") ? await api.listAdmins() : [];
   } catch (error) { toast(error.message, true); }
   state.loading = false; render();
@@ -219,7 +222,7 @@ function renderAdminDashboard() {
   const members = state.data.profiles.filter(item => item.role === "member");
   return `<div class="grid">
     ${api.backendMode && !api.testingMode && can(state.profile,"migration") && !members.length ? `<section class="card"><h2>先匯入原有資料</h2><p>請在原本有會員及消費資料的裝置操作；匯入前先下載完整備份。此程序不會刪除本機原資料。</p><button class="button" data-action="import-local-data">匯入原本裝置資料</button></section>` : ""}
-    ${expiryNoticeView(members, state.data.rewardWallets, new Date(), {showEmpty:true,canSeePhone:can(state.profile,"phone.read")})}
+    ${expiryNoticeView(members, state.data.rewardWallets, new Date(), {showEmpty:true,canSeePhone:can(state.profile,"phone.read"),noticeRows:state.expiryNoticeRows})}
     <div class="grid cols-3">
       ${statCard("今日營業額", formatMoney(revenue.todayRevenue), "按已完成消費的實收金額")}
       ${statCard("本月營業額", formatMoney(revenue.currentRevenue), `${revenue.currentMonth} · 香港時間`)}
@@ -245,7 +248,7 @@ function renderAdminAppointments() {
 
 function renderMembers() {
   const members = state.data.profiles.filter(item => item.role === "member");
-  return `${expiryNoticeView(members, state.data.rewardWallets,new Date(),{canSeePhone:can(state.profile,"phone.read")})}<section class="card"><div class="card-head"><h2>會員名單</h2><div class="actions"><span class="muted">${members.length} 位會員</span><button class="button small" data-action="new-member">＋ 新增會員</button></div></div>
+  return `${expiryNoticeView(members, state.data.rewardWallets,new Date(),{canSeePhone:can(state.profile,"phone.read"),noticeRows:state.expiryNoticeRows})}<section class="card"><div class="card-head"><h2>會員名單</h2><div class="actions"><span class="muted">${members.length} 位會員</span><button class="button small" data-action="new-member">＋ 新增會員</button></div></div>
     <div class="filter-bar"><input id="member-search" placeholder="🔍 搜尋電話、姓名或電郵"></div>
     <div class="table-wrap"><table><thead><tr><th>會員</th>${can(state.profile,"phone.read") ? "<th>電話</th>" : ""}<th>生日（月日）</th><th>入會年份</th><th>會員年資</th><th>印花</th><th>介紹編號</th><th>操作</th></tr></thead><tbody id="member-table-body">${members.map(memberRow).join("")}</tbody></table></div>
   </section>`;
@@ -547,26 +550,31 @@ function backendSaleModal() {
     const first=appointment ? catalog.find(c=>c.id===appointment.service_id) : catalog[0];
     state.saleItems=first ? [catalogToSaleItem(first)] : [{catalogId:"",name:"",kind:"service",quantity:1,unitPrice:0}];
   }
-  let quote,baseQuote,error="";
-  try{baseQuote=backendSaleQuote(null);quote=backendSaleQuote();}catch(e){error=e.message;}
-  const labels={hair10:"剪吹10次・9折",stamp4:"4印花・9折",stamp8:"8印花・85折"};
   return `<div class="modal-backdrop"><section class="modal wide"><div class="modal-head"><h2>記錄消費</h2><button class="icon-button" data-action="close-modal">×</button></div><form id="sale-form">
     <div class="form-grid">${memberPhoneLookup({name:"memberId",inputId:"sale-member-phone",label:"會員（電話搜尋）",required:true,selectedId:selected})}
     <label class="field"><span>相關預約（選填）</span><select name="appointmentId" id="sale-appointment"><option value="">沒有</option>${state.data.appointments.filter(a=>a.member_id===selected && ["pending","confirmed"].includes(a.status)).map(a=>`<option value="${esc(a.id)}" ${a.id===state.modal.appointmentId?"selected":""}>${formatDateTime(a.start_at)} · ${serviceName(a.service_id)}</option>`).join("")}</select></label>
     <label class="field"><span>是次跟進髮型師</span><select name="stylistId" id="sale-stylist" required>${stylists.map(s=>`<option value="${esc(s.id)}" ${s.id===(state.modal.stylistId || appointment?.stylist_id || stylists[0]?.id)?"selected":""}>${esc(s.name)}</option>`).join("")}</select></label>
     <label class="field"><span>是次跟進髮型助理（選填）</span><select name="assistantId" id="sale-assistant"><option value="">沒有／不適用</option>${assistants.map(a=>`<option value="${esc(a.id)}" ${a.id===state.modal.assistantId?"selected":""}>${esc(a.name)}</option>`).join("")}</select></label></div>
-    <div class="card-head"><h3>消費項目</h3><button type="button" class="button ghost small" data-action="add-sale-item">＋ 新增項目</button></div><div class="list">${state.saleItems.map(saleItemRow).join("")}</div>
-    <label class="field"><span>印花優惠（選填）；第10次剪吹自動計算</span><select id="sale-coupon" name="couponId">${error && state.modal.couponId ? `<option selected disabled>原優惠不適用，請重新選擇</option>` : ""}<option value="">不使用印花優惠（產品及第10次剪吹仍自動計算）</option>${(baseQuote?.availableCoupons || []).map(c=>`<option value="${esc(c.id)}" ${c.id===state.modal.couponId?"selected":""}>${labels[c.kind]}</option>`).join("")}</select></label>
+    <div class="card-head"><h3>消費項目</h3><button type="button" class="button ghost small" data-action="add-sale-item">＋ 新增項目</button></div><p class="demo-note">可直接修改「本次單價」，優惠及實收即時重算；只影響本次消費，不會更改價目表。</p><div class="list">${state.saleItems.map(saleItemRow).join("")}</div>
+    <div id="sale-financials" aria-live="polite">${backendSaleFinancials()}</div></form></section></div>`;
+}
+
+function backendSaleFinancials(){
+  let quote,baseQuote,error="";
+  try{baseQuote=backendSaleQuote(null);quote=backendSaleQuote();}catch(e){error=e.message;}
+  const catalog=activeCatalogItems(),stylists=activeStylistItems();
+  const labels={hair10:"剪吹10次・9折",stamp4:"4印花・9折",stamp8:"8印花・85折"};
+  return `<label class="field"><span>印花優惠（選填）；第10次剪吹自動計算</span><select id="sale-coupon" name="couponId">${error && state.modal.couponId ? `<option selected disabled>原優惠不適用，請重新選擇</option>` : ""}<option value="">不使用印花優惠（產品及第10次剪吹仍自動計算）</option>${(baseQuote?.availableCoupons || []).map(c=>`<option value="${esc(c.id)}" ${c.id===state.modal.couponId?"selected":""}>${labels[c.kind]}</option>`).join("")}</select></label>
     <p class="muted small">三款剪吹共同累積，第10次自動即單為一個剪吹項目打9折，不發印花；產品95折只計產品，其他服務不會因此打95折；其他服務及其加購產品按優惠前金額每滿$600得1印花（產品按95折計，剪吹金額不計入）。4印花獲9折後繼續累積，8印花獲85折後重新計算；同一消費新獲優惠可即時使用。</p>
     ${error?`<p class="demo-note" role="alert">${esc(error)}</p>`:`<div class="sale-summary"><div><span>原價</span><strong>${formatMoney(quote.receipt.subtotal)}</strong></div>${saleDiscountRows(quote.receipt,!state.modal.couponId)}<div class="total"><span>實收</span><strong>${formatMoney(quote.receipt.finalAmount)}</strong></div><div><span>新增印花</span><strong>+${quote.receipt.earnedStamps}${quote.receipt.bonusStamps?`＋生日 ${quote.receipt.bonusStamps}`:""}</strong></div><div><span>本輪印花進度</span><strong>${quote.receipt.stampProgress}／8</strong></div><div><span>剪吹累積次數</span><strong>${quote.receipt.hairVisits}／10</strong></div></div>`}
-    <button class="button primary full" type="submit" ${error || !stylists.length || state.saleItems.some(i=>!catalog.some(c=>c.id===i.catalogId)) ? "disabled" : ""}>確認消費、付款及更新優惠</button></form></section></div>`;
+    <button class="button primary full" type="submit" ${error || !stylists.length || state.saleItems.some(i=>!catalog.some(c=>c.id===i.catalogId)) ? "disabled" : ""}>確認消費、付款及更新優惠</button>`;
 }
 
 function saleItemRow(item,index) {
   return `<div class="list-item sale-item-card ${item.justAdded ? "sale-item-new" : ""}"><div class="form-grid" style="flex:1">
     <label class="field span-2"><span>項目</span><select data-sale-catalog data-index="${index}" required>${catalogOptions(item.catalogId)}</select></label>
     <label class="field"><span>數量</span><input data-sale-field="quantity" data-index="${index}" type="number" min="1" value="${item.quantity}"></label>
-    <label class="field"><span>單價（按價目表）</span><input data-sale-field="unitPrice" data-index="${index}" type="number" min="0" max="1000000" step="0.01" readonly value="${esc(item.unitPrice)}"></label>
+    <label class="field"><span>本次單價（可修改）</span><input data-sale-field="unitPrice" data-index="${index}" type="number" inputmode="decimal" min="0" max="1000000" step="0.01" required value="${esc(item.unitPrice)}"></label>
   </div>${state.saleItems.length>1?`<button class="icon-button" type="button" data-action="remove-sale-item" data-index="${index}">×</button>`:""}</div>`;
 }
 
@@ -666,8 +674,8 @@ function bindForms() {
   root.querySelector("#sale-stylist")?.addEventListener("change", event => { state.modal.stylistId = event.target.value; });
   root.querySelector("#sale-assistant")?.addEventListener("change", event => { state.modal.assistantId = event.target.value || null; });
   root.querySelector("#sale-redemption")?.addEventListener("change", event => { state.modal.redemption = Number(event.target.value); render(); });
-  root.querySelector("#sale-coupon")?.addEventListener("change", event => { state.modal.couponId = event.target.value || null; render(); });
-  root.querySelectorAll("[data-sale-field]").forEach(input => input.addEventListener("change", updateSaleItem));
+  bindSaleCoupon();
+  root.querySelectorAll("[data-sale-field]").forEach(input => input.addEventListener(api.backendMode ? "input" : "change", updateSaleItem));
   root.querySelectorAll("[data-sale-catalog]").forEach(input => input.addEventListener("change", updateSaleCatalog));
 }
 
@@ -872,6 +880,7 @@ async function onBooking(event) {
 
 async function onSale(event) {
   event.preventDefault(); const form=Object.fromEntries(new FormData(event.currentTarget));
+  for(const input of event.currentTarget.querySelectorAll('[data-sale-field]'))setSaleItemInput(input);
   if (state.saleItems.some(item => !activeCatalogItems().some(row => row.id === item.catalogId))) {
     toast("請為所有消費項目選擇現行服務或產品。", true);
     return;
@@ -912,9 +921,18 @@ function updateSaleCatalog(event) {
 }
 
 function updateSaleItem(event) {
-  const index=Number(event.target.dataset.index); const field=event.target.dataset.saleField;
-  state.saleItems[index][field]=["quantity","unitPrice"].includes(field) && event.target.value!==""?Number(event.target.value):event.target.value; render();
+  setSaleItemInput(event.target);
+  const financials=api.backendMode && root.querySelector('#sale-financials');
+  if(financials){financials.innerHTML=backendSaleFinancials();bindSaleCoupon();return;}
+  render();
 }
+
+function setSaleItemInput(input){
+  const index=Number(input.dataset.index),field=input.dataset.saleField;
+  if(!state.saleItems[index] || !['quantity','unitPrice'].includes(field))return;
+  state.saleItems[index][field]=input.value===''?'':Number(input.value);
+}
+function bindSaleCoupon(){root.querySelector('#sale-coupon')?.addEventListener('change',event=>{state.modal.couponId=event.target.value || null;const financials=root.querySelector('#sale-financials');if(financials){financials.innerHTML=backendSaleFinancials();bindSaleCoupon();}else render();});}
 
 function catalogToSaleItem(item){return {catalogId:item.id,kind:item.kind,name:item.name,quantity:1,unitPrice:Number(item.price)||0};}
 function catalogOptions(selectedId){

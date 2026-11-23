@@ -83,7 +83,8 @@ export function saleUnitPrice(value) {
   return Math.round(price*100)/100;
 }
 
-// Names/kinds/reward groups and unit prices come from the server catalog.
+// Names/kinds/reward groups come from the server catalog. Authorized admins
+// can set a validated per-sale unit price without editing that catalog.
 // One completed checkout counts as at most one visit.
 export function quoteRewards({ wallet, items, saleId, at = new Date(), couponId = null, birthdayBonus = 0 }) {
   validateWallet(wallet);

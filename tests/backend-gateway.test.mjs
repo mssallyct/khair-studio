@@ -19,15 +19,25 @@ function harness(username="howood"){
   return {call,data:()=>data,counts:()=>({reads,writes}),replace:value=>data=value};
 }
 
-test('無姓名到期提醒API保留電話欄但只傳給Howood',async()=>{
- for(const name of ['howood','sally','admin135']){
+test('無姓名到期提醒獨立開放電話，其他頁及匯出仍按原權限',async()=>{
+ for(const name of ['howood','sally','admin135','admin268','admin567','admin889','admin233']){
   const h=harness(name),m=h.data().profiles[0];m.name=' ';m.joined_date='2025-11-29';h.data().rewardWallets.m1=createRewardWallet(m,now);h.data().rewardWallets.m1.stampProgress=2;
   const before=JSON.stringify(h.data()),home=await(await h.call('/home')).json();
-  assert.equal(JSON.stringify(home).includes('9123'),name==='howood');
-  if(name==='howood')assert.equal(home.expiry[0].phone,'9123 4567');
-  if(name==='sally')assert.equal(Object.hasOwn(home.expiry[0],'phone'),false);
+  const notices=await(await h.call('/expiry-notices')).json();assert.equal(notices[0].displayName,'9123 4567');assert.equal(Object.hasOwn(notices[0],'phone'),false);
+  if(['howood','sally'].includes(name))assert.equal(home.expiry[0].displayName,'9123 4567');else assert.equal(home.expiry,undefined);
+  assert.equal((await(await h.call('/members')).text()).includes('9123'),name==='howood');
+  assert.equal((await(await h.call('/members/search',{query:'91234567'})).text()).includes('9123'),name==='howood');
+  if(['howood','sally'].includes(name))assert.equal((await(await h.call('/export')).text()).includes('9123'),name==='howood');
+  assert.equal((await h.call('/expiry-notices',null,{headers:{Authorization:''}})).status,401);
   assert.equal(JSON.stringify(h.data()),before);
  }
+});
+
+test('提醒不能查到非到期會員電話，具姓名者不附電話，資料不被改寫',async()=>{
+ const h=harness('sally'),m=h.data().profiles[0];m.name='';
+ assert.deepEqual(await(await h.call('/expiry-notices?memberId=m1')).json(),[]);
+ m.joined_date='2025-11-29';h.data().rewardWallets.m1=createRewardWallet(m,now);h.data().rewardWallets.m1.stampProgress=2;m.name='有姓名';
+ const notices=await(await h.call('/expiry-notices')).json();assert.equal(notices[0].displayName,'有姓名');assert.ok(!JSON.stringify(notices).includes('9123'));
 });
 
 test('backend stores month-only and full birthdays without inventing or rewriting old dates',async()=>{
@@ -84,12 +94,14 @@ test("單價及分類由正式項目決定，記實際操作者、重複提交�
   const before=JSON.stringify(h.data());assert.equal((await h.call("/sales",{...body,items:[{catalogId:"color",quantity:2}]})).status,409);assert.equal(JSON.stringify(h.data()),before);
 });
 
-test('取消改價後按價目表計產品95折及第10次剪吹9折；繞過前端改價亦拒絕',async()=>{
+test('修改單價後按新價計產品95折及第10次剪吹9折；原價目及舊消費不變',async()=>{
  const h=harness();h.data().catalog.push({id:'hair',kind:'service',name:'洗剪吹',price:168,active:true},{id:'prod',kind:'product',name:'產品',price:100,active:true});h.data().rewardWallets.m1.hairVisits=9;
- const body={requestId:'fixed-price-checkout-01',memberId:'m1',stylistId:'sty-a',items:[{catalogId:'hair',quantity:1},{catalogId:'prod',quantity:2}]};
- const r=await(await h.call('/sales',body)).json();assert.equal(r.receipt.hairDiscount,16.8);assert.equal(r.receipt.productDiscount,10);assert.equal(r.receipt.finalAmount,341.2);assert.equal(r.receipt.earnedStamps,0);
+ h.data().sales.push({id:'old-sale',final_amount:99});
+ const body={requestId:'flex-price-checkout-01',memberId:'m1',stylistId:'sty-a',items:[{catalogId:'hair',quantity:1,unitPrice:150},{catalogId:'prod',quantity:2,unitPrice:80.5}]};
+ const r=await(await h.call('/sales',body)).json();assert.equal(r.receipt.hairDiscount,15);assert.equal(r.receipt.productDiscount,8.05);assert.equal(r.receipt.finalAmount,287.95);assert.equal(r.receipt.earnedStamps,0);
+ assert.equal(h.data().catalog.find(c=>c.id==='hair').price,168);assert.equal(h.data().sales[0].final_amount,99);assert.equal(h.data().auditLog.at(-1).action,'sale.prices_adjusted');assert.equal(h.data().auditLog.at(-1).actor_username,'howood');
  const before=JSON.stringify(h.data());
- for(const value of [null,'',-1,'abc',1.001,1000001,500,700])assert.equal((await h.call('/sales',{...body,requestId:'invalid-price-request',items:[{catalogId:'color',quantity:1,unitPrice:value}]})).status,400);
+ for(const value of [null,'',-1,'abc',1.001,1000001])assert.equal((await h.call('/sales',{...body,requestId:'invalid-price-request',items:[{catalogId:'color',quantity:1,unitPrice:value}]})).status,400);
  assert.equal(JSON.stringify(h.data()),before);
  assert.equal((await h.call('/sales',{...body,items:[{catalogId:'hair',quantity:1,unitPrice:160}]})).status,409);
 });
