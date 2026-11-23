@@ -174,3 +174,28 @@ export function adjustRewardStamps({wallet,delta,eventId,at=new Date()}) {
   next.adjustments[eventId]={delta,at:new Date(at).toISOString()};
   return {wallet:next,coupons};
 }
+
+// Referral awards use the first completed bill's actual paid total. A bill
+// can award either one stamp or one hair visit, never both.
+export function referralRewardKind(items, finalAmount) {
+  const services=items.filter(item=>item.kind==="service" && item.unitPrice*item.quantity>0);
+  if(!services.length)return "none";
+  if(Math.round(finalAmount*100)>=60000)return "stamp";
+  return services.some(isHairVisitItem) ? "hair_visit" : "none";
+}
+
+export function awardReferralHairVisit({wallet,eventId,at=new Date()}) {
+  if(!/^[a-zA-Z0-9_-]{1,120}$/.test(String(eventId || "")))throw new Error("介紹獎賞編號無效。");
+  const {next}=currentWallet(wallet,at);
+  next.adjustments ||= {};
+  if(next.adjustments[eventId])throw new Error("此介紹獎賞已處理。");
+  const timestamp=new Date(at).toISOString(),coupons=[];
+  next.hairVisits++;
+  if(next.hairVisits===10){
+    next.hairVisits=0;
+    const coupon={id:`${eventId}-hair10`,kind:"hair10",rate:.1,earnedAt:timestamp,expiresAt:null,eventId,cycle:null};
+    next.coupons.push(coupon);coupons.push(coupon);
+  }
+  next.adjustments[eventId]={kind:"referral_hair_visit",delta:1,at:timestamp};
+  return {wallet:next,coupons};
+}

@@ -41,5 +41,8 @@ test("會員詳情整合個人、消費、預約、印花及介紹紀錄", () =>
   assert.equal(detail.referrer.name, "Beth");
   assert.deepEqual(detail.referredMembers.map(item => item.name), ["Cara"]);
   assert.equal(detail.rewardedReferralCount, 1);
+  assert.equal(detail.referralStampCount,1);assert.equal(detail.referralHairCount,0);
+  data.referrals.push({referrer_id:'member-1',referred_member_id:'member-2',awarded_at:'2026-02-03T00:00:00Z',reward_type:'hair_visit'});
+  const updated=buildMemberDetail(data,'member-1');assert.equal(updated.rewardedReferralCount,2);assert.equal(updated.referralStampCount,1);assert.equal(updated.referralHairCount,1);
   assert.equal(buildMemberDetail(data, "missing"), null);
 });

@@ -38,7 +38,9 @@ export function buildMemberDetail(data, memberId) {
     totalSpend: sales.reduce((sum, item) => sum + Number(item.final_amount || 0), 0),
     referrer,
     referredMembers,
-    rewardedReferralCount: referredRecords.filter(item => item.awarded_at).length
+    rewardedReferralCount: referredRecords.filter(item => item.awarded_at).length,
+    referralStampCount: referredRecords.filter(item => item.awarded_at && item.reward_type!=="hair_visit").length,
+    referralHairCount: referredRecords.filter(item => item.awarded_at && item.reward_type==="hair_visit").length
   };
 }
 

@@ -1,6 +1,6 @@
 import { randomUUID, createHash } from "node:crypto";
 import { accountName, can, requirePermission, memberFor, auditFor, privateText, displayDataFor } from "../js/access-policy.js";
-import { createRewardWallet, dateOnly, expiryNotices, membershipYear, quoteRewards, adjustRewardStamps, saleUnitPrice } from "../js/loyalty-v2.js";
+import { createRewardWallet, dateOnly, expiryNotices, membershipYear, quoteRewards, adjustRewardStamps, saleUnitPrice, referralRewardKind, awardReferralHairVisit } from "../js/loyalty-v2.js";
 import { hongKongDateKey, normalizeBirthday, normalizeHongKongPhone, birthdayStampAward } from "../js/rules.js";
 import { summarizeRevenue } from "../js/revenue.js";
 import { DemoStore } from "../js/demo-store.js";
@@ -266,18 +266,23 @@ export function createGateway({ repository, authenticate, auth, allowedOrigins =
         const r = calculated.receipt;
         if(body.expectedFinalAmount!=null && Math.round(Number(body.expectedFinalAmount)*100)!==Math.round(r.finalAmount*100))throw failure(409,"項目價格或優惠狀態已更新，請重新載入及確認實收金額。");
         const sale = {id:requestId,member_id:member.id,appointment_id:appointment?.id || null,stylist_id:body.stylistId,assistant_id:body.assistantId || null,subtotal:r.subtotal,discount:r.discount,final_amount:r.finalAmount,discount_label:r.discountLabel,completed_at:timestamp,completed_by:principal.id,policy_version:r.policyVersion};
+        const firstConsumption=!data.sales.some(previousSale=>previousSale.member_id===member.id);
         data.sales.push(sale);
         for (const line of items) data.saleItems.push({id:randomUUID(),sale_id:requestId,catalog_id:line.catalogId,name:line.name,kind:line.kind,quantity:line.quantity,unit_price:line.unitPrice,catalog_unit_price:line.catalogUnitPrice});
         data.rewardWallets[member.id] = calculated.wallet;
         for(const [type,delta,reason] of [["spending",r.earnedStamps,`新制消費印花；計印花金額HK$${r.stampEarningAmount}`],["birthday",r.bonusStamps,`${hongKongDateKey(now).slice(0,4)} 生日月份獎賞`]])if(delta)data.stampLedger.push({id:randomUUID(),member_id:member.id,delta,type,reason,sale_id:requestId,created_by:principal.id,created_at:timestamp,policy_version:r.policyVersion});
-        const referral=data.referrals.find(row=>row.referred_member_id===member.id && !row.awarded_at);
-        if(referral && items.some(line=>line.kind==="service" && line.unitPrice*line.quantity>0)){
-          const referrerWallet=data.rewardWallets?.[referral.referrer_id];
-          if(!referrerWallet)throw failure(409,"介紹人的新制起始紀錄尚未核對；本次消費未有寫入。");
-          const id=`ref-${requestId}`;
-          data.rewardWallets[referral.referrer_id]=adjustRewardStamps({wallet:referrerWallet,delta:1,eventId:id,at:now}).wallet;
-          referral.awarded_at=timestamp;
-          data.stampLedger.push({id,member_id:referral.referrer_id,delta:1,type:"referral",reason:`成功介紹 ${member.name}`,sale_id:requestId,created_by:principal.id,created_at:timestamp,policy_version:r.policyVersion});
+        const referral=data.referrals.find(row=>row.referred_member_id===member.id && !row.awarded_at && !row.evaluated_at);
+        if(referral){
+          const reward=firstConsumption ? referralRewardKind(items,r.finalAmount) : "none",id=`ref-${requestId}`;
+          Object.assign(referral,{evaluated_at:timestamp,evaluated_sale_id:requestId,reward_type:reward,reward_rule:"first-consumption-v1",evaluated_by:principal.id,evaluation_reason:firstConsumption ? "first_consumption" : "prior_consumption"});
+          if(reward!=="none"){
+            const referrerWallet=data.rewardWallets?.[referral.referrer_id];
+            if(!referrerWallet || referrerWallet.memberId!==referral.referrer_id || referral.referrer_id===member.id)throw failure(409,"介紹人的優惠紀錄未能核對；本次消費未有寫入。");
+            data.rewardWallets[referral.referrer_id]=(reward==="stamp" ? adjustRewardStamps({wallet:referrerWallet,delta:1,eventId:id,at:now}) : awardReferralHairVisit({wallet:referrerWallet,eventId:id,at:now})).wallet;
+            referral.awarded_at=timestamp;
+            if(reward==="stamp")data.stampLedger.push({id,member_id:referral.referrer_id,delta:1,type:"referral",reason:`首次消費滿HK$600・成功介紹 ${member.name}`,sale_id:requestId,created_by:principal.id,created_at:timestamp,policy_version:r.policyVersion});
+          }
+          audit(data,principal,"referral.evaluated",referral.id,`介紹獎賞：${reward==="stamp" ? "+1印花" : reward==="hair_visit" ? "+1剪吹次數" : firstConsumption ? "首次消費不符合獎賞條件" : "已有過往消費，不補發"}`,timestamp);
         }
         if(appointment)appointment.status="completed";
         audit(data,principal,"sale.completed",requestId,`完成消費 HK$${r.finalAmount}`,timestamp);

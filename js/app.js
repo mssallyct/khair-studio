@@ -198,7 +198,7 @@ function renderProfile() {
   const membership = membershipInfo(state.profile);
   return `<div class="grid cols-2"><section class="card"><p class="eyebrow">Member Profile</p><h2>${esc(state.profile.name)}</h2><div class="list">
     ${profileRow("電郵", state.profile.email)}${profileRow("電話", state.profile.phone || "—")}${profileRow("生日（月日）", formatBirthday(state.profile.birthday))}${profileRow("入會年份", membership.joinedYear ?? "未記錄")}${profileRow("會員年資", membership.label)}${profileRow("介紹編號", state.profile.referral_code || "—")}
-  </div></section><section class="card"><h2>會員優惠</h2><div class="list">${profileRow("髮型產品", "會員95折")}${profileRow("生日月份", "消費額外1印花")}${profileRow("介紹朋友", "朋友首次消費後獲1印花")}</div></section></div>`;
+  </div></section><section class="card"><h2>會員優惠</h2><div class="list">${profileRow("髮型產品", "會員95折")}${profileRow("生日月份", "消費額外1印花")}${profileRow("介紹朋友", "首次消費含服務且實收滿$600：介紹人獲1印花；否則指定剪吹獲1次剪吹次數；淨產品無獎賞")}</div></section></div>`;
 }
 
 function renderAdminView() {
@@ -258,7 +258,7 @@ function renderMembers() {
 function renderMemberDetail() {
   const detail = buildMemberDetail(state.data, state.selectedMemberId);
   if (!detail) return `<section class="card"><button class="text-button" data-view="members">← 返回會員名單</button>${empty("找不到此會員資料")}</section>`;
-  const { member, appointments, sales, stamps, balance, totalSpend, referrer, referredMembers, rewardedReferralCount } = detail;
+  const { member, appointments, sales, stamps, balance, totalSpend, referrer, referredMembers, rewardedReferralCount, referralStampCount, referralHairCount } = detail;
   const membership = membershipInfo(member);
   const referralNames = referredMembers.length ? referredMembers.map(item => item.name).join("、") : "未有介紹會員";
   return `<div class="grid member-detail-page">
@@ -275,14 +275,14 @@ function renderMemberDetail() {
       ${statCard("現有印花", memberBalance(member.id), state.data.rewardWallets?.[member.id] ? "本輪累積進度；可用優惠另列" : member.import_opening ? "原表紀錄；可用優惠待核對" : balance >= 8 ? "可享85折" : balance >= 4 ? "可享9折" : `尚欠${Math.max(0, 4 - balance)}個享9折`)}
       ${statCard("累積消費", formatMoney(totalSpend), `${sales.length} 宗消費紀錄`)}
       ${statCard("預約紀錄", appointments.length, "包括待確認及已完成")}
-      ${statCard("介紹會員", referredMembers.length, `${rewardedReferralCount} 位已消費並獲印花`)}
+      ${statCard("介紹會員", referredMembers.length, `${rewardedReferralCount} 位已獲介紹獎賞`)}
     </div>
     <div class="grid cols-2">
       <section class="card"><div class="card-head"><h2>基本資料</h2><span class="badge active">有效會員</span></div><div class="list">
         ${profileRow("姓名", member.name)}${can(state.profile,"phone.read") ? profileRow("電話", member.phone || "—") : ""}${profileRow("電郵", member.email || "—")}${profileRow("生日（月日）", formatBirthday(member.birthday))}${profileRow("會員編號", member.referral_code || "—")}${profileRow("入會日期", membership.joinedDate || "未記錄")}${profileRow("入會年份", membership.joinedYear ?? "未記錄")}${profileRow("會員年資", membership.label)}
       </div><p class="muted small">年資按已記錄的入會日期及香港日期自動計算已滿年、月；未有日期不會估算。</p></section>
       <section class="card"><div class="card-head"><h2>介紹紀錄</h2></div><div class="list">
-        ${profileRow("介紹人", referrer ? `${referrer.name}${can(state.profile,"phone.read") ? ` · ${referrer.phone || "未有電話"}` : ""}` : "沒有介紹人")}${profileRow("已介紹會員人數", String(referredMembers.length))}${profileRow("已獲介紹印花", String(rewardedReferralCount))}${profileRow("已介紹會員", referralNames)}
+        ${profileRow("介紹人", referrer ? `${referrer.name}${can(state.profile,"phone.read") ? ` · ${referrer.phone || "未有電話"}` : ""}` : "沒有介紹人")}${profileRow("已介紹會員人數", String(referredMembers.length))}${profileRow("已獲介紹印花", String(referralStampCount))}${profileRow("已獲介紹剪吹次數", String(referralHairCount))}${profileRow("已介紹會員", referralNames)}
       </div></section>
     </div>
     <div class="grid cols-2">

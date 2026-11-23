@@ -55,6 +55,11 @@ test('新客預約以單一請求提交會員資料，舊會員流程保持不�
  context.form={customerType:'existing',memberId:'member-1',serviceId:'svc'};await runInContext('onAdminAppointment({preventDefault(){},currentTarget:{},submitter:{}})',context);assert.equal(context.sent.memberId,'member-1');assert.equal(context.sent.newMember,undefined);
 });
 
+test('會員介紹獎賞分開列印花和剪吹次數，不把剪吹次數寫成印花',()=>{
+ const context=renderContext();runInContext('state.selectedMemberId="member-1";state.data.referrals=[{referrer_id:"member-1",referred_member_id:"a",awarded_at:"2026-11-24T00:00:00Z",reward_type:"hair_visit"}];',context);
+ const html=runInContext('renderMemberDetail()',context);assert.match(html,/已獲介紹剪吹次數/);assert.match(html,/已獲介紹印花/);assert.doesNotMatch(html,/位已消費並獲印花/);
+});
+
 test('備註在會員底部，逐點顯示、轉義及可新增／確認刪除',()=>{
   const context=renderContext();
   runInContext('api.backendMode=true;state.selectedMemberId="member-1";state.data.profiles[0].remarks=["第一點 <script>alert(1)</script>","第二點"];',context);

@@ -112,8 +112,8 @@ function buildSheets(data, exportedAt) {
     },
     {
       name: "介紹記錄",
-      headers: ["記錄編號", "介紹人", "新會員", "獎賞時間", "建立時間"],
-      rows: referrals.map(item => [item.id, memberName(item.referrer_id), memberName(item.referred_member_id), dateTime(item.awarded_at), dateTime(item.created_at)])
+      headers: ["記錄編號", "介紹人", "新會員", "獎賞時間", "建立時間", "介紹獎賞", "核對消費編號", "核對時間"],
+      rows: referrals.map(item => [item.id, memberName(item.referrer_id), memberName(item.referred_member_id), dateTime(item.awarded_at), dateTime(item.created_at), item.awarded_at ? item.reward_type==="hair_visit" ? "剪吹次數 +1" : "印花 +1" : item.evaluated_at ? "無獎賞" : "未核對", item.evaluated_sale_id || "", dateTime(item.evaluated_at)])
     },
     {
       name: "服務及產品",

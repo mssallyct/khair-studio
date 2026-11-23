@@ -3,6 +3,16 @@ import assert from "node:assert/strict";
 import { buildAdminWorkbook } from "../js/excel-export.js";
 import { prepareServiceCatalogUpdate } from "../js/service-catalog.js";
 
+test('介紹記錄匯出區分印花、剪吹次數及無獎賞，保留舊印花分類',()=>{
+ const data={profiles:[],appointments:[],sales:[],saleItems:[],stamps:[],catalog:[],stylists:[],assistants:[],referrals:[
+  {id:'old',awarded_at:'2026-01-01T00:00:00Z'},
+  {id:'hair',awarded_at:'2026-11-24T00:00:00Z',reward_type:'hair_visit',evaluated_sale_id:'first-sale',evaluated_at:'2026-11-24T00:00:00Z'},
+  {id:'none',reward_type:'none',evaluated_at:'2026-11-24T00:00:00Z'}
+ ]};
+ const files=unzipStoredFiles(buildAdminWorkbook(data)),xml=[...files.values()].join('\n');
+ for(const text of ['介紹獎賞','印花 +1','剪吹次數 +1','無獎賞','核對消費編號','first-sale'])assert.ok(xml.includes(text));
+});
+
 test("管理員匯出多工作表 XLSX", () => {
   const bytes = buildAdminWorkbook({
     profiles: [

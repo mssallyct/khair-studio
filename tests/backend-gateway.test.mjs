@@ -20,6 +20,49 @@ function harness(username="howood"){
 }
 
 const newCustomerBooking=(overrides={})=>({requestId:'new-booking-request-001',newMember:{name:'新客人',phone:'61234567',birthday:null,email:''},serviceId:'color',stylistId:'sty-a',date:'2026-11-20',time:'11:00',status:'confirmed',note:'預約備註',...overrides});
+function referralHarness(username='howood'){
+ const h=harness(username),ref={id:'ref',role:'member',name:'介紹人',active:true,joined_date:'2026-01-01'};
+ h.data().profiles.push(ref);h.data().rewardWallets.ref=createRewardWallet(ref,now);h.data().referrals.push({id:'rel',referrer_id:'ref',referred_member_id:'m1',awarded_at:null});
+ h.data().catalog.push({id:'hair',kind:'service',name:'單剪',price:130,active:true},{id:'product',kind:'product',name:'產品',price:100,active:true});
+ return h;
+}
+const referralSale=items=>({requestId:'first-referral-checkout-001',memberId:'m1',stylistId:'sty-a',items:items.map(([catalogId,unitPrice,quantity=1])=>({catalogId,unitPrice,quantity}))});
+
+test('七位管理員首次消費滿600優先派一印，剪吹不足600派一次，純產品不派',async()=>{
+ const cases=[[[['hair',130]],'hair_visit'],[[['hair',600]],'stamp'],[[['hair',100],['color',500]],'stamp'],[[['hair',100],['product',600]],'stamp'],[[['hair',100],['product',500]],'hair_visit'],[[['color',599.99]],'none'],[[['color',600]],'stamp'],[[['color',1800]],'stamp'],[[['product',800]],'none'],[[['hair',0],['product',800]],'none'],[[['hair',130,3]],'hair_visit']];
+ for(const username of ['howood','sally','admin135','admin268','admin567','admin889','admin233'])for(const [lines,kind] of cases){
+  const h=referralHarness(username),body=referralSale(lines);const response=await h.call('/sales',body);assert.equal(response.status,200);
+  const w=h.data().rewardWallets.ref,ref=h.data().referrals[0];assert.equal(ref.reward_type,kind);assert.equal(w.stampProgress,kind==='stamp'?1:0);assert.equal(w.hairVisits,kind==='hair_visit'?1:0);assert.equal(ref.evaluated_by,`admin-${username}`);
+  assert.equal(h.data().stampLedger.filter(s=>s.member_id==='ref').length,kind==='stamp'?1:0);
+  const before=JSON.stringify(h.data());await h.call('/sales',body);assert.equal(JSON.stringify(h.data()),before);
+  await h.call('/sales',{...referralSale([['color',600]]),requestId:'next-referral-checkout-002'});assert.deepEqual(h.data().rewardWallets.ref,w);
+ }
+});
+
+test('介紹剪吹滿10發未用9折資格；介紹印花滿4及8照常發優惠',async()=>{
+ const h=referralHarness('sally');h.data().rewardWallets.ref.hairVisits=9;h.data().rewardWallets.ref.stampProgress=2;
+ assert.equal((await h.call('/sales',referralSale([['hair',130]]))).status,200);
+ const w=h.data().rewardWallets.ref;assert.equal(w.hairVisits,0);assert.equal(w.stampProgress,2);assert.equal(w.coupons.length,1);assert.equal(w.coupons[0].kind,'hair10');assert.ok(!w.coupons[0].usedAt);
+ const redeem={...referralSale([['hair',130]]),memberId:'ref',requestId:'referrer-redeem-checkout-001',couponId:w.coupons[0].id};const result=await(await h.call('/sales',redeem)).json();assert.equal(result.receipt.finalAmount,117);assert.equal(h.data().rewardWallets.ref.hairVisits,1);
+ for(const progress of [3,7]){const x=referralHarness();x.data().rewardWallets.ref.stampProgress=progress;await x.call('/sales',referralSale([['color',600]]));const wallet=x.data().rewardWallets.ref;assert.equal(wallet.stampProgress,(progress+1)%8);assert.equal(wallet.coupons[0].kind,progress===3?'stamp4':'stamp8');}
+});
+
+test('舊獎賞不重算，有過往消費不補發，缺介紹人錢包或本人介紹全單回滾',async()=>{
+ const h=referralHarness();h.data().referrals[0].awarded_at='2026-01-02T00:00:00Z';h.data().rewardWallets.ref.stampProgress=1;const oldRef=structuredClone(h.data().referrals[0]),oldWallet=structuredClone(h.data().rewardWallets.ref);
+ await h.call('/sales',referralSale([['hair',130]]));assert.deepEqual(h.data().referrals[0],oldRef);assert.deepEqual(h.data().rewardWallets.ref,oldWallet);
+ const prior=referralHarness();prior.data().sales.push({id:'old',member_id:'m1',final_amount:100});await prior.call('/sales',referralSale([['color',600]]));assert.equal(prior.data().rewardWallets.ref.stampProgress,0);assert.equal(prior.data().referrals[0].evaluation_reason,'prior_consumption');
+ for(const self of [false,true]){const x=referralHarness();if(self)x.data().referrals[0].referrer_id='m1';else delete x.data().rewardWallets.ref;const before=JSON.stringify(x.data());assert.equal((await x.call('/sales',referralSale([['hair',130]]))).status,409);assert.equal(JSON.stringify(x.data()),before);}
+});
+
+test('並行首次消費及重試只發一次介紹獎賞',async()=>{
+ const h=referralHarness(),body=referralSale([['hair',130]]);
+ const results=await Promise.all([h.call('/sales',body),h.call('/sales',body),h.call('/sales',{...body,requestId:'another-referral-sale-002'})]);assert.ok(results.every(r=>r.status===200));assert.equal(h.data().rewardWallets.ref.hairVisits,1);assert.equal(h.data().sales.length,2);
+});
+
+test('介紹門檻使用優惠後實收，原價600即時用印花後不足600不發',async()=>{
+ const h=referralHarness(),body=referralSale([['color',600]]);h.data().rewardWallets.m1.stampProgress=3;body.couponId=`${body.requestId}-stamp4-1`;
+ const response=await h.call('/sales',body);assert.equal(response.status,200);assert.equal((await response.json()).receipt.finalAmount,540);assert.equal(h.data().referrals[0].reward_type,'none');assert.equal(h.data().rewardWallets.ref.stampProgress,0);
+});
 test('所有管理員到期提醒包含第15至30天，但不包含第31天，電話仍只在提醒開放',async()=>{
  for(const username of ['howood','sally','admin135','admin268','admin567','admin889','admin233']){
   const h=harness(username),m=h.data().profiles[0];m.name='';
@@ -44,13 +87,13 @@ test('所有管理員可在新客預約登記介紹人；預約不發印花，�
  }
 });
 
-test('新客預約介紹關係沿用消費規則：純產品不發，服務首次發一次',async()=>{
+test('新客第一次純產品不發介紹獎賞，之後服務亦不補發',async()=>{
  const h=harness('sally');h.data().catalog[0].duration_minutes=60;h.data().catalog.push({id:'product',kind:'product',name:'產品',price:100,active:true});
  const input=newCustomerBooking();input.newMember.referrerId='m1';const result=await(await h.call('/actions/createAppointment',{args:[input]})).json();
  const sale={requestId:'referral-product-sale-001',memberId:result.memberId,stylistId:'sty-a',items:[{catalogId:'product',quantity:1,unitPrice:100}]};
  assert.equal((await h.call('/sales',sale)).status,200);assert.equal(h.data().referrals[0].awarded_at,null);assert.equal(h.data().rewardWallets.m1.stampProgress,0);
- const service={...sale,requestId:'referral-service-sale-002',items:[{catalogId:'color',quantity:1,unitPrice:100}]};assert.equal((await h.call('/sales',service)).status,200);assert.ok(h.data().referrals[0].awarded_at);assert.equal(h.data().rewardWallets.m1.stampProgress,1);
- assert.equal((await h.call('/sales',service)).status,200);assert.equal((await h.call('/sales',{...service,requestId:'referral-service-sale-003'})).status,200);assert.equal(h.data().rewardWallets.m1.stampProgress,1);assert.equal(h.data().stampLedger.filter(s=>s.type==='referral').length,1);
+ const service={...sale,requestId:'referral-service-sale-002',items:[{catalogId:'color',quantity:1,unitPrice:600}]};assert.equal((await h.call('/sales',service)).status,200);assert.equal(h.data().referrals[0].awarded_at,null);assert.equal(h.data().rewardWallets.m1.stampProgress,0);
+ assert.equal((await h.call('/sales',service)).status,200);assert.equal((await h.call('/sales',{...service,requestId:'referral-service-sale-003'})).status,200);assert.equal(h.data().rewardWallets.m1.stampProgress,0);assert.equal(h.data().stampLedger.filter(s=>s.type==='referral').length,0);
 });
 
 test('介紹人無效或預約失敗，會員、介紹關係及預約全部回滾',async()=>{
@@ -204,16 +247,16 @@ test('修改單價後按新價計產品95折及第10次剪吹9折；原價目及
  assert.equal((await h.call('/sales',{...body,items:[{catalogId:'hair',quantity:1,unitPrice:160}]})).status,409);
 });
 
-test('介紹人獎賞涵蓋三款剪吹及不足600服務，純產品不派，每位被介紹人只派一次',async()=>{
- for(const [name,kind,eligible] of [['洗剪吹','service',true],['洗吹造型','service',true],['單剪','service',true],['護理','service',true],['產品','product',false]]){
+test('首次不足600的三款剪吹只派剪吹次數，其他服務及產品不派，不能之後補發',async()=>{
+ for(const [name,kind,eligible] of [['洗剪吹','service',true],['洗吹造型','service',true],['單剪','service',true],['護理','service',false],['產品','product',false]]){
   const h=harness();h.data().catalog[0]={id:'color',name,kind,price:100,active:true};
   const ref={id:'ref',role:'member',name:'介紹人',joined_date:'2026-01-01'};h.data().profiles.push(ref);h.data().rewardWallets.ref=createRewardWallet(ref,now);
   h.data().referrals.push({id:'rel',referrer_id:'ref',referred_member_id:'m1',awarded_at:null});
   const body={requestId:'referral-service-001',memberId:'m1',stylistId:'sty-a',items:[{catalogId:'color',quantity:1,unitPrice:100}]};
-  assert.equal((await h.call('/sales',body)).status,200);assert.equal(h.data().rewardWallets.ref.stampProgress,eligible?1:0);
+  assert.equal((await h.call('/sales',body)).status,200);assert.equal(h.data().rewardWallets.ref.stampProgress,0);assert.equal(h.data().rewardWallets.ref.hairVisits,eligible?1:0);
   await h.call('/sales',body);await h.call('/sales',{...body,requestId:'referral-service-002'});
-  assert.equal(h.data().stampLedger.filter(s=>s.type==='referral').length,eligible?1:0);
-  if(!eligible){h.data().catalog[0].kind='service';await h.call('/sales',{...body,requestId:'referral-service-003'});assert.equal(h.data().rewardWallets.ref.stampProgress,1);}
+  assert.equal(h.data().stampLedger.filter(s=>s.type==='referral').length,0);assert.equal(h.data().rewardWallets.ref.hairVisits,eligible?1:0);
+  if(!eligible){h.data().catalog[0].kind='service';await h.call('/sales',{...body,requestId:'referral-service-003',items:[{catalogId:'color',quantity:1,unitPrice:600}]});assert.equal(h.data().rewardWallets.ref.stampProgress,0);}
  }
 });
 
