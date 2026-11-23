@@ -1,6 +1,21 @@
 export const SERVICE_CATALOG_REVISION = "2026-11-19-services-v1";
 export const SERVICE_CATALOG_BACKUP_KEY = `khair-catalog-backup-${SERVICE_CATALOG_REVISION}`;
 
+// Display-only ordering: keep IDs, prices and historical catalog rows intact.
+export function sortedActiveCatalog(catalog = []) {
+  const active=catalog.filter(item=>item.active!==false),groups=new Map();
+  const normalize=name=>String(name || "").normalize("NFKC").trim().replace(/\s+/g," ");
+  const priority=name=>/^單剪(?:$|[\s(])/.test(name)?0:/^洗剪吹(?:$|[\s(])/.test(name)?1:/^洗吹(?:造型)?(?:$|[\s(])/.test(name)?2:3;
+  active.filter(item=>item.kind!=="product").forEach((item,index)=>{
+    const name=normalize(item.name);
+    if(!groups.has(name))groups.set(name,{priority:priority(name),first:index,items:[]});
+    groups.get(name).items.push(item);
+  });
+  const services=[...groups.values()].sort((a,b)=>a.priority-b.priority || a.first-b.first).flatMap(group=>[...group.items].sort((a,b)=>Number(a.price)-Number(b.price)));
+  const products=active.filter(item=>item.kind==="product").sort((a,b)=>Number(a.price)-Number(b.price));
+  return [...services,...products];
+}
+
 // The supplied price list is authoritative. Duplicate descriptions at different
 // prices are separate options with stable IDs, never a reason to merge rows.
 export const SERVICE_PRICE_LIST = Object.freeze([

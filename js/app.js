@@ -8,6 +8,7 @@ import { can, visibleViews, displayDataFor } from "./access-policy.js";
 import { expiryNoticeView, memberRewardView } from "./reward-views.js";
 import { quoteRewards, rewardStatus } from "./loyalty-v2.js";
 import { normalizeRemarks } from "./member-remarks.js";
+import { sortedActiveCatalog } from "./service-catalog.js";
 
 let api;
 const root = document.querySelector("#app");
@@ -924,7 +925,7 @@ function catalogOptions(selectedId){
   return `${needsSelection?`<option value="" selected disabled>請選擇現行項目</option>`:""}${services.length?`<optgroup label="服務">${options(services)}</optgroup>`:""}${products.length?`<optgroup label="產品">${options(products)}</optgroup>`:""}`;
 }
 
-function activeCatalogItems() { const active=(state.data.catalog || []).filter(item=>item.active!==false);return [...active.filter(i=>i.kind!=="product"),...active.filter(i=>i.kind==="product").sort((a,b)=>Number(a.price)-Number(b.price))]; }
+function activeCatalogItems() { return sortedActiveCatalog(state.data.catalog || []); }
 function activeStylistItems() { return (state.data.stylists || []).filter(item => item.active !== false); }
 function activeAssistantItems() { return (state.data.assistants || []).filter(item => item.active !== false); }
 

@@ -6,7 +6,7 @@ import * as rules from "../js/rules.js";
 import { normalizeRemarks } from "../js/member-remarks.js";
 import { summarizeRevenue } from "../js/revenue.js";
 import { buildMemberDetail } from "../js/member-detail.js";
-import { buildServiceCatalog } from "../js/service-catalog.js";
+import { buildServiceCatalog, sortedActiveCatalog } from "../js/service-catalog.js";
 import * as access from "../js/access-policy.js";
 import * as rewardViews from "../js/reward-views.js";
 import { createRewardWallet, quoteRewards, rewardStatus } from "../js/loyalty-v2.js";
@@ -17,7 +17,7 @@ import { webcrypto } from "node:crypto";
 const source = readFileSync(new URL("../js/app.js",import.meta.url),"utf8").replace(/^import .*;\n/gm,"").replace("boot();","");
 function renderContext() {
   const root = {addEventListener() {}};
-  const context = createContext({...rules,...access,...rewardViews,normalizeRemarks,quoteRewards,rewardStatus,crypto:webcrypto,structuredClone,summarizeRevenue,buildMemberDetail,document:{querySelector:()=>root}});
+  const context = createContext({...rules,...access,...rewardViews,normalizeRemarks,sortedActiveCatalog,quoteRewards,rewardStatus,crypto:webcrypto,structuredClone,summarizeRevenue,buildMemberDetail,document:{querySelector:()=>root}});
   runInContext(source,context);
   runInContext('state.profile={id:"admin-howood",username:"howood",name:"Howood",role:"admin",active:true};',context);
   runInContext(`api={demoMode:true}; state.data={profiles:[{id:"member-1",name:"測試會員",role:"member"}],appointments:[],sales:[],catalog:[{id:"svc",kind:"service",name:"護理",price:600,active:true}],stylists:[{id:"sty-a",name:"髮型師",active:true}],assistants:[],stamps:[{member_id:"member-1",delta:3}]}; state.modal={type:"sale",memberId:"member-1",redemption:4}; state.saleItems=[{catalogId:"svc",kind:"service",name:"護理",quantity:1,unitPrice:600}];`,context);
@@ -79,6 +79,15 @@ test('從會員列按印花直接固定該會員，其他管理員只讀而不�
     assert.doesNotMatch(html,/<select|data-member-lookup-input/);assert.match(html,/現有印花：5 個/);
     assert.equal(html.includes('id="stamp-form"'),username!=='admin135');
   }
+});
+
+test('消費選單剪吹置頂、同名依價排序，保留已選項目及原資料',()=>{
+  const context=renderContext();
+  runInContext('state.data.catalog=[{id:"wash-high",name:"洗剪吹",price:198,kind:"service"},{id:"color",name:"染髮",price:600,kind:"service"},{id:"wash-low",name:"洗剪吹",price:168,kind:"service"},{id:"cut-high",name:"單剪",price:160,kind:"service"},{id:"cut-low",name:"單剪",price:130,kind:"service"},{id:"blow",name:"洗吹",price:138,kind:"service"}];',context);
+  const before=runInContext('JSON.stringify(state.data.catalog)',context),html=runInContext('catalogOptions("wash-high")',context);
+  const ids=['cut-low','cut-high','wash-low','wash-high','blow','color'];
+  for(let i=1;i<ids.length;i++)assert.ok(html.indexOf(`value="${ids[i-1]}"`)<html.indexOf(`value="${ids[i]}"`));
+  assert.match(html,/value="wash-high" selected/);assert.equal(runInContext('JSON.stringify(state.data.catalog)',context),before);
 });
 
 test('產品在設定及消費選單按價錢排序，停用舊產品不顯示',()=>{
