@@ -17,6 +17,10 @@ export class PostgresRepository {
     }catch(error){await client.query("ROLLBACK").catch(()=>{});throw error;}finally{client.release();}
   }
   async accountByUsername(name){return (await this.pool.query("SELECT id, username, name, password_hash, active FROM khair_private.admin_accounts WHERE username = $1",[name])).rows[0] || null;}
+  async saveCleanupBackup(client,{id,document,checksum,actorId}){
+    if(!client?.query)throw new Error("清理備份必須與刪除在同一交易內。");
+    await client.query("INSERT INTO khair_private.migration_backups(id,document,checksum,created_by) VALUES ($1,$2::jsonb,$3,$4)",[id,JSON.stringify(document),checksum,actorId]);
+  }
   async accountById(id){return (await this.pool.query("SELECT id, username, name, active FROM khair_private.admin_accounts WHERE id = $1",[id])).rows[0] || null;}
   async listAdmins(){return (await this.pool.query("SELECT id, username, name, active, created_at FROM khair_private.admin_accounts ORDER BY active DESC, username")).rows;}
   async insertAdmin(client,account){

@@ -10,6 +10,7 @@ import { newAdmin } from "./admin-management.mjs";
 import { normalizeRemarks } from "../js/member-remarks.js";
 import { importMemberRows } from "./member-import.mjs";
 import { activateImportedMembers } from "../js/import-activation.js";
+import { handleMemberCleanup } from "./member-cleanup.mjs";
 
 // Adapter contract: authenticate verifies a server-side session, never request
 // role/username headers. transaction locks the data, commits atomically on success
@@ -38,6 +39,12 @@ export function createGateway({ repository, authenticate, auth, allowedOrigins =
       const principal = await authenticate(request);
       if (!accountName(principal)) throw failure(401,"請先登入獲授權的管理員帳戶。");
       const now = clock();
+      if(["/maintenance/member-cleanup/preview","/maintenance/member-cleanup/apply"].includes(path) && request.method==="POST" && !readPost){
+        requirePermission(principal,"admins.manage");
+        const raw=await request.text();if(Buffer.byteLength(raw)>4096)throw failure(413,"請求內容過大。");
+        let input;try{input=JSON.parse(raw);}catch{throw failure(400,"請求格式錯誤。");}
+        return reply(200,await handleMemberCleanup({repository,principal,input,mode:path.split('/').at(-1),now}),headers);
+      }
       if(path==="/admins" && (request.method==="GET" || readPost)){
         requirePermission(principal,"admins.manage");
         const rows=await repository.listAdmins();
