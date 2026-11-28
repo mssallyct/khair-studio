@@ -236,6 +236,22 @@ test("後端結帳畫面即時使用第4印優惠，進度不扣走，單價可�
   runInContext("state.modal.couponId=null;",context);assert.doesNotMatch(runInContext("saleModal()",context),/原優惠不適用/);
 });
 
+test('匯入補回4印優惠及本單第8印同時顯示於下拉選單，由所有管理員自選且不自動使用',()=>{
+ for(const username of ['howood','sally','admin135','admin268','admin567','admin889','admin233']){
+  const context=renderContext(),now=new Date(),member={id:'member-1',role:'member',name:'測試匯入會員',joined_date:rules.hongKongDateKey(now)};
+  const wallet=createRewardWallet(member,now);wallet.stampProgress=7;
+  wallet.coupons.push({id:'import-opening-member-1-stamp4',kind:'stamp4',rate:.1,earnedAt:now.toISOString(),expiresAt:`${wallet.periodEnd}T00:00:00+08:00`,cycle:`${wallet.periodStart}:0`});
+  Object.assign(context,{wallet,member,username});
+  runInContext('api.backendMode=true;state.profile.username=username;state.data.profiles=[member];state.data.rewardWallets={"member-1":wallet};state.modal.requestId="import-dropdown-sale";state.modal.couponId=null;',context);
+  const html=runInContext('saleModal()',context),select=html.match(/<select id="sale-coupon"[^>]*>([\s\S]*?)<\/select>/)[1];
+  assert.match(select,/value="import-opening-member-1-stamp4"[^>]*>4印花・9折/);assert.match(select,/value="import-dropdown-sale-stamp8-1"[^>]*>8印花・85折/);assert.doesNotMatch(select,/selected/);
+  for(const [id,amount] of [['import-opening-member-1-stamp4',540],['import-dropdown-sale-stamp8-1',510]]){
+   context.couponId=id;runInContext('state.modal.couponId=couponId',context);assert.ok(runInContext('saleModal()',context).includes(rules.formatMoney(amount)));
+  }
+  assert.equal(wallet.stampProgress,7);assert.equal(wallet.coupons[0].usedAt,undefined);
+ }
+});
+
 test('輸入單價即時重算，不重建輸入框；空白禁止結帳，再輸入可繼續',()=>{
  const context=renderContext(),now=new Date();context.wallet=createRewardWallet({id:'member-1',joined_date:rules.hongKongDateKey(now)},now);context.financials={innerHTML:''};
  runInContext('api.backendMode=true;state.data.rewardWallets={"member-1":wallet};state.modal.requestId="live-price-input-test";state.modal.couponId=null;root.querySelector=selector=>selector==="#sale-financials"?financials:null;root.innerHTML="input preserved";',context);
